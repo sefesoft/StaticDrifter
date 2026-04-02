@@ -41,6 +41,7 @@ namespace StaticDrift.Managers
         private float _waveElapsedTime;
         private float _currentWaveDuration;
         private PlayerHealth _playerHealth;
+        private GameObject _gameplayHudCanvas;
         private bool _isGameOver;
         private bool _isInterlude;
         private int _pendingWave;
@@ -267,6 +268,7 @@ namespace StaticDrift.Managers
             GameObject canvasGo = GameObject.Find("GameplayHUD_Canvas");
             if (canvasGo != null)
             {
+                _gameplayHudCanvas = canvasGo;
                 parent = canvasGo.transform;
             }
             GameObject hud = Instantiate(_gameplayHUDPrefab, parent);
@@ -879,12 +881,16 @@ namespace StaticDrift.Managers
             }
         }
 
-        private static void SetGameplayHudVisible(bool visible)
+        private void SetGameplayHudVisible(bool visible)
         {
-            GameObject gameplayHudCanvas = GameObject.Find("GameplayHUD_Canvas");
-            if (gameplayHudCanvas != null)
+            if (_gameplayHudCanvas == null)
             {
-                gameplayHudCanvas.SetActive(visible);
+                _gameplayHudCanvas = GameObject.Find("GameplayHUD_Canvas");
+            }
+
+            if (_gameplayHudCanvas != null)
+            {
+                _gameplayHudCanvas.SetActive(visible);
             }
         }
 
@@ -909,17 +915,14 @@ namespace StaticDrift.Managers
 
             TMP_Text tmp = go.AddComponent<TextMeshProUGUI>();
             tmp.text = text;
+            GameFontLibrary.Apply(tmp);
             tmp.fontSize = fontSize;
             tmp.fontStyle = FontStyles.Bold;
             tmp.alignment = alignment;
             tmp.color = new Color(0.93f, 0.97f, 1f, 1f);
             tmp.enableWordWrapping = true;
             tmp.overflowMode = TextOverflowModes.Overflow;
-            if (tmp.fontSharedMaterial != null)
-            {
-                tmp.outlineWidth = 0.18f;
-                tmp.outlineColor = new Color(0.04f, 0.05f, 0.08f, 1f);
-            }
+            GameFontLibrary.ApplyOutline(tmp, 0.18f, new Color(0.04f, 0.05f, 0.08f, 1f));
 
             tmp.raycastTarget = false;
             return tmp;
@@ -937,12 +940,12 @@ namespace StaticDrift.Managers
 
             TMP_Text tmp = go.AddComponent<TextMeshProUGUI>();
             tmp.text = text;
+            GameFontLibrary.Apply(tmp);
             tmp.fontSize = fontSize;
             tmp.fontStyle = FontStyles.Bold;
             tmp.alignment = centered ? TextAlignmentOptions.Center : TextAlignmentOptions.Top;
             tmp.color = new Color(0.93f, 0.97f, 1f, 1f);
-            tmp.outlineWidth = 0.18f;
-            tmp.outlineColor = new Color(0.04f, 0.05f, 0.08f, 1f);
+            GameFontLibrary.ApplyOutline(tmp, 0.18f, new Color(0.04f, 0.05f, 0.08f, 1f));
             tmp.raycastTarget = false;
             return tmp;
         }
@@ -958,19 +961,9 @@ namespace StaticDrift.Managers
             rect.sizeDelta = new Vector2(220f, 86f);
 
             Image image = buttonGo.AddComponent<Image>();
-            image.color = new Color(0.15f, 0.22f, 0.38f, 0.92f);
             Button btn = buttonGo.AddComponent<Button>();
             btn.targetGraphic = image;
             btn.onClick.AddListener(onClick);
-            ColorBlock colors = btn.colors;
-            colors.normalColor = new Color(0.18f, 0.25f, 0.42f, 0.95f);
-            colors.highlightedColor = new Color(0.36f, 0.62f, 0.95f, 1f);
-            colors.selectedColor = new Color(0.45f, 0.76f, 1f, 1f);
-            colors.pressedColor = new Color(0.95f, 0.72f, 0.30f, 1f);
-            colors.disabledColor = new Color(0.16f, 0.18f, 0.24f, 0.45f);
-            colors.colorMultiplier = 1f;
-            colors.fadeDuration = 0.05f;
-            btn.colors = colors;
             buttonGo.AddComponent<UiSelectOnPointerEnter>();
 
             GameObject textGo = new GameObject("Label");
@@ -978,15 +971,22 @@ namespace StaticDrift.Managers
             RectTransform textRect = textGo.AddComponent<RectTransform>();
             textRect.anchorMin = Vector2.zero;
             textRect.anchorMax = Vector2.one;
-            textRect.offsetMin = Vector2.zero;
-            textRect.offsetMax = Vector2.zero;
+            textRect.offsetMin = new Vector2(18f, 12f);
+            textRect.offsetMax = new Vector2(-18f, -10f);
             TMP_Text t = textGo.AddComponent<TextMeshProUGUI>();
             t.text = label;
             t.fontSize = label.Contains("\n") ? 26f : 36f;
             t.fontStyle = FontStyles.Bold;
             t.alignment = TextAlignmentOptions.Center;
             t.color = new Color(0.85f, 0.95f, 1f, 1f);
+            t.enableWordWrapping = true;
+            t.overflowMode = TextOverflowModes.Ellipsis;
+            t.enableAutoSizing = true;
+            t.fontSizeMin = label.Contains("\n") ? 14f : 18f;
+            t.fontSizeMax = label.Contains("\n") ? 26f : 36f;
+            t.lineSpacing = -10f;
             t.raycastTarget = false;
+            PixelArtUiSkin.ApplyButtonStyle(btn, image, t);
             return btn;
         }
 
@@ -1108,7 +1108,7 @@ namespace StaticDrift.Managers
                 RectTransform pickRect = pickButton.GetComponent<RectTransform>();
                 if (pickRect != null)
                 {
-                    pickRect.sizeDelta = new Vector2(300f, 134f);
+                    pickRect.sizeDelta = new Vector2(320f, 150f);
                 }
                 draftButtons.Add(pickButton);
 

@@ -15,6 +15,8 @@ namespace StaticDrift.Managers
     public class TitleScreenMenu : MonoBehaviour
     {
         [SerializeField] private string _gameplaySceneName = "Gameplay";
+        [SerializeField] private Sprite _backgroundSprite;
+        [SerializeField] private Sprite _titleSprite;
         private GameObject _mainPanel;
         private GameObject _optionsPanel;
         private GameObject _leaderboardPanel;
@@ -66,8 +68,10 @@ namespace StaticDrift.Managers
             panelRect.offsetMin = Vector2.zero;
             panelRect.offsetMax = Vector2.zero;
             Image panelImage = panel.AddComponent<Image>();
-            panelImage.color = new Color(0.03f, 0.05f, 0.09f, 1f);
+            panelImage.color = new Color(0f, 0f, 0f, 0.32f);
             _panelPointerGuard = panel.AddComponent<MenuPanelPointerGuard>();
+
+            CreateBackgroundImage(panel.transform);
 
             _mainPanel = new GameObject("MainMenu");
             _mainPanel.transform.SetParent(panel.transform, false);
@@ -105,8 +109,10 @@ namespace StaticDrift.Managers
 
         private void BuildMainMenu()
         {
-            CreateText(_mainPanel.transform, "Title", "STATIC DRIFT", new Vector2(0.5f, 0.72f), 92f);
-            CreateText(_mainPanel.transform, "Subtitle", "ASTEROIDS ROGUELIKE", new Vector2(0.5f, 0.64f), 36f);
+            if (!CreateTitleImage(_mainPanel.transform))
+            {
+                CreateText(_mainPanel.transform, "Title", "STATIC DRIFT", new Vector2(0.5f, 0.72f), 92f);
+            }
 
             _startButton = CreateButton(_mainPanel.transform, "StartButton", "Start", new Vector2(0.5f, 0.47f), () =>
             {
@@ -130,14 +136,62 @@ namespace StaticDrift.Managers
             _exitButton = CreateButton(_mainPanel.transform, "ExitButton", "Exit", new Vector2(0.5f, 0.14f), ExitGame);
         }
 
+        private void CreateBackgroundImage(Transform parent)
+        {
+            if (_backgroundSprite == null)
+            {
+                return;
+            }
+
+            GameObject go = new GameObject("BackgroundImage");
+            go.transform.SetParent(parent, false);
+            go.transform.SetAsFirstSibling();
+
+            RectTransform rect = go.AddComponent<RectTransform>();
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
+
+            Image image = go.AddComponent<Image>();
+            image.sprite = _backgroundSprite;
+            image.preserveAspect = false;
+            image.color = Color.white;
+            image.raycastTarget = false;
+        }
+
+        private bool CreateTitleImage(Transform parent)
+        {
+            if (_titleSprite == null)
+            {
+                return false;
+            }
+
+            GameObject go = new GameObject("TitleImage");
+            go.transform.SetParent(parent, false);
+            RectTransform rect = go.AddComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0.5f, 0.70f);
+            rect.anchorMax = new Vector2(0.5f, 0.70f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.sizeDelta = new Vector2(920f, 340f);
+
+            Image image = go.AddComponent<Image>();
+            image.sprite = _titleSprite;
+            image.preserveAspect = true;
+            image.color = Color.white;
+            image.raycastTarget = false;
+            return true;
+        }
+
         private void BuildOptionsMenu()
         {
-            CreateText(_optionsPanel.transform, "OptionsTitle", "OPTIONS", new Vector2(0.5f, 0.72f), 72f);
+            Transform contentRoot = CreateMenuContainer(_optionsPanel.transform, "OptionsContainer", new Vector2(1160f, 760f)).transform;
+            CreateText(contentRoot, "OptionsTitle", "OPTIONS", new Vector2(0.5f, 0.72f), 72f);
 
-            CreateText(_optionsPanel.transform, "MusicVolumeLabel", "Music Volume", new Vector2(0.35f, 0.58f), 34f);
-            Slider musicSlider = CreateSlider(_optionsPanel.transform, "MusicVolumeSlider", new Vector2(0.58f, 0.58f), 0f, 1f, GameSettings.MusicVolume);
+            CreateAlignedText(contentRoot, "MusicVolumeLabel", "Music Volume", new Vector2(0.10f, 0.60f), new Vector2(320f, 70f), 34f, TextAlignmentOptions.MidlineLeft);
+            Slider musicSlider = CreateSlider(contentRoot, "MusicVolumeSlider", new Vector2(0.56f, 0.60f), 0f, 1f, GameSettings.MusicVolume);
             _musicVolumeSlider = musicSlider;
-            _musicVolumeValueText = CreateText(_optionsPanel.transform, "MusicVolumeValue", "", new Vector2(0.83f, 0.58f), 30f);
+            _musicVolumeValueText = CreateAlignedText(contentRoot, "MusicVolumeValue", "", new Vector2(0.92f, 0.60f), new Vector2(120f, 60f), 30f, TextAlignmentOptions.MidlineRight);
             musicSlider.onValueChanged.AddListener(value =>
             {
                 GameSettings.SetMusicVolume(value);
@@ -145,10 +199,10 @@ namespace StaticDrift.Managers
                 AudioManager.EnsureExists().PlayUiMove();
             });
 
-            CreateText(_optionsPanel.transform, "SfxVolumeLabel", "SFX Volume", new Vector2(0.35f, 0.50f), 34f);
-            Slider sfxSlider = CreateSlider(_optionsPanel.transform, "SfxVolumeSlider", new Vector2(0.58f, 0.50f), 0f, 1f, GameSettings.SfxVolume);
+            CreateAlignedText(contentRoot, "SfxVolumeLabel", "SFX Volume", new Vector2(0.10f, 0.47f), new Vector2(320f, 70f), 34f, TextAlignmentOptions.MidlineLeft);
+            Slider sfxSlider = CreateSlider(contentRoot, "SfxVolumeSlider", new Vector2(0.56f, 0.47f), 0f, 1f, GameSettings.SfxVolume);
             _sfxVolumeSlider = sfxSlider;
-            _sfxVolumeValueText = CreateText(_optionsPanel.transform, "SfxVolumeValue", "", new Vector2(0.83f, 0.50f), 30f);
+            _sfxVolumeValueText = CreateAlignedText(contentRoot, "SfxVolumeValue", "", new Vector2(0.92f, 0.47f), new Vector2(120f, 60f), 30f, TextAlignmentOptions.MidlineRight);
             sfxSlider.onValueChanged.AddListener(value =>
             {
                 GameSettings.SetSfxVolume(value);
@@ -156,9 +210,9 @@ namespace StaticDrift.Managers
                 AudioManager.EnsureExists().PlayUiMove();
             });
 
-            CreateText(_optionsPanel.transform, "SensitivityLabel", "Rotation Sensitivity", new Vector2(0.35f, 0.42f), 34f);
-            Slider sensitivitySlider = CreateSlider(_optionsPanel.transform, "SensitivitySlider", new Vector2(0.58f, 0.42f), 0.5f, 2f, GameSettings.RotationSensitivity);
-            _sensitivityValueText = CreateText(_optionsPanel.transform, "SensitivityValue", "", new Vector2(0.83f, 0.42f), 30f);
+            CreateAlignedText(contentRoot, "SensitivityLabel", "Rotation Sensitivity", new Vector2(0.10f, 0.34f), new Vector2(360f, 70f), 34f, TextAlignmentOptions.MidlineLeft);
+            Slider sensitivitySlider = CreateSlider(contentRoot, "SensitivitySlider", new Vector2(0.56f, 0.34f), 0.5f, 2f, GameSettings.RotationSensitivity);
+            _sensitivityValueText = CreateAlignedText(contentRoot, "SensitivityValue", "", new Vector2(0.92f, 0.34f), new Vector2(120f, 60f), 30f, TextAlignmentOptions.MidlineRight);
             sensitivitySlider.onValueChanged.AddListener(value =>
             {
                 GameSettings.SetRotationSensitivity(value);
@@ -167,13 +221,13 @@ namespace StaticDrift.Managers
             });
 
             CreateText(
-                _optionsPanel.transform,
+                contentRoot,
                 "ControlHints",
                 "Controls\nKeyboard: W accelerate, A rotate left, D rotate right\nGamepad: L/R rotate, A accelerate",
-                new Vector2(0.5f, 0.28f),
-                30f);
+                new Vector2(0.5f, 0.18f),
+                28f);
 
-            _backButton = CreateButton(_optionsPanel.transform, "BackButton", "Back", new Vector2(0.5f, 0.14f), () =>
+            _backButton = CreateButton(contentRoot, "BackButton", "Back", new Vector2(0.5f, 0.08f), () =>
             {
                 AudioManager.EnsureExists().PlayUiConfirm();
                 ShowOptions(false);
@@ -183,22 +237,39 @@ namespace StaticDrift.Managers
 
         private void BuildLeaderboardMenu()
         {
-            CreateText(_leaderboardPanel.transform, "LeaderboardTitle", "LEADERBOARD", new Vector2(0.5f, 0.74f), 72f);
-            TMP_Text scoresText = CreateText(_leaderboardPanel.transform, "LeaderboardScores", BuildLeaderboardText(), new Vector2(0.5f, 0.48f), 34f);
+            Transform contentRoot = CreateMenuContainer(_leaderboardPanel.transform, "LeaderboardContainer", new Vector2(980f, 760f)).transform;
+            CreateText(contentRoot, "LeaderboardTitle", "LEADERBOARD", new Vector2(0.5f, 0.79f), 72f);
+            CreateText(contentRoot, "LeaderboardSubtitle", "Current Top Scores", new Vector2(0.5f, 0.67f), 34f);
+            TMP_Text scoresText = CreateText(contentRoot, "LeaderboardScores", BuildLeaderboardText(), new Vector2(0.5f, 0.42f), 34f);
             RectTransform scoresRect = scoresText.GetComponent<RectTransform>();
             if (scoresRect != null)
             {
-                scoresRect.sizeDelta = new Vector2(860f, 420f);
+                scoresRect.sizeDelta = new Vector2(860f, 360f);
             }
             scoresText.alignment = TextAlignmentOptions.Top;
             scoresText.enableWordWrapping = true;
             scoresText.overflowMode = TextOverflowModes.Overflow;
 
-            _leaderboardBackButton = CreateButton(_leaderboardPanel.transform, "LeaderboardBackButton", "Back", new Vector2(0.5f, 0.14f), () =>
+            _leaderboardBackButton = CreateButton(contentRoot, "LeaderboardBackButton", "Back", new Vector2(0.5f, 0.10f), () =>
             {
                 AudioManager.EnsureExists().PlayUiConfirm();
                 ShowLeaderboard(false);
             });
+        }
+
+        private static GameObject CreateMenuContainer(Transform parent, string name, Vector2 size)
+        {
+            GameObject go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            RectTransform rect = go.AddComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0.5f, 0.5f);
+            rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.sizeDelta = size;
+
+            Image image = go.AddComponent<Image>();
+            image.color = new Color(0.03f, 0.06f, 0.12f, 0.88f);
+            return go;
         }
 
         private void ShowOptions(bool show)
@@ -291,20 +362,49 @@ namespace StaticDrift.Managers
             rect.anchorMin = anchor;
             rect.anchorMax = anchor;
             rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.sizeDelta = new Vector2(1300f, 140f);
+            rect.sizeDelta = new Vector2(880f, 160f);
             TMP_Text text = go.AddComponent<TextMeshProUGUI>();
             text.text = value;
+            GameFontLibrary.Apply(text);
             text.fontSize = fontSize;
             text.fontStyle = FontStyles.Bold;
             text.alignment = TextAlignmentOptions.Center;
             text.color = new Color(0.87f, 0.96f, 1f, 1f);
+            text.enableWordWrapping = true;
             text.raycastTarget = false;
-            // Avoid ArgumentNullException when TMP material is not ready yet.
-            if (text.fontSharedMaterial != null)
+            GameFontLibrary.ApplyOutline(text, 0.24f, new Color(0.02f, 0.03f, 0.08f, 1f));
+            return text;
+        }
+
+        private static TMP_Text CreateAlignedText(Transform parent, string name, string value, Vector2 anchor, Vector2 size, float fontSize, TextAlignmentOptions alignment)
+        {
+            GameObject go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            RectTransform rect = go.AddComponent<RectTransform>();
+            rect.anchorMin = anchor;
+            rect.anchorMax = anchor;
+            float pivotX = 0.5f;
+            if (alignment == TextAlignmentOptions.MidlineLeft)
             {
-                text.outlineWidth = 0.24f;
-                text.outlineColor = new Color(0.02f, 0.03f, 0.08f, 1f);
+                pivotX = 0f;
             }
+            else if (alignment == TextAlignmentOptions.MidlineRight)
+            {
+                pivotX = 1f;
+            }
+
+            rect.pivot = new Vector2(pivotX, 0.5f);
+            rect.sizeDelta = size;
+
+            TMP_Text text = go.AddComponent<TextMeshProUGUI>();
+            text.text = value;
+            GameFontLibrary.Apply(text);
+            text.fontSize = fontSize;
+            text.fontStyle = FontStyles.Bold;
+            text.alignment = alignment;
+            text.color = new Color(0.9f, 0.97f, 1f, 1f);
+            text.raycastTarget = false;
+            GameFontLibrary.ApplyOutline(text, 0.22f, new Color(0.02f, 0.03f, 0.08f, 1f));
             return text;
         }
 
@@ -316,20 +416,22 @@ namespace StaticDrift.Managers
             rect.anchorMin = anchor;
             rect.anchorMax = anchor;
             rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.sizeDelta = new Vector2(420f, 36f);
+            rect.sizeDelta = new Vector2(420f, 52f);
 
             Image bg = go.AddComponent<Image>();
-            bg.color = new Color(0.12f, 0.16f, 0.24f, 0.8f);
+            bg.sprite = CreateSliderFrameSprite();
+            bg.type = Image.Type.Sliced;
+            bg.color = new Color(0.89f, 0.95f, 1f, 1f);
             Slider slider = go.AddComponent<Slider>();
             slider.minValue = min;
             slider.maxValue = max;
             slider.value = value;
             slider.targetGraphic = bg;
             ColorBlock sliderColors = slider.colors;
-            sliderColors.normalColor = new Color(0.16f, 0.20f, 0.30f, 0.9f);
-            sliderColors.highlightedColor = new Color(0.35f, 0.62f, 0.96f, 1f);
-            sliderColors.selectedColor = new Color(0.45f, 0.78f, 1f, 1f);
-            sliderColors.pressedColor = new Color(0.96f, 0.72f, 0.28f, 1f);
+            sliderColors.normalColor = new Color(0.34f, 0.49f, 0.8f, 1f);
+            sliderColors.highlightedColor = new Color(0.52f, 0.72f, 1f, 1f);
+            sliderColors.selectedColor = new Color(0.6f, 0.82f, 1f, 1f);
+            sliderColors.pressedColor = new Color(0.95f, 0.73f, 0.32f, 1f);
             sliderColors.colorMultiplier = 1f;
             sliderColors.fadeDuration = 0.05f;
             slider.colors = sliderColors;
@@ -339,22 +441,44 @@ namespace StaticDrift.Managers
             RectTransform fillAreaRect = fillArea.AddComponent<RectTransform>();
             fillAreaRect.anchorMin = new Vector2(0f, 0f);
             fillAreaRect.anchorMax = new Vector2(1f, 1f);
-            fillAreaRect.offsetMin = new Vector2(12f, 7f);
-            fillAreaRect.offsetMax = new Vector2(-12f, -7f);
+            fillAreaRect.offsetMin = new Vector2(14f, 12f);
+            fillAreaRect.offsetMax = new Vector2(-14f, -12f);
+
+            Image fillAreaBg = fillArea.AddComponent<Image>();
+            fillAreaBg.color = new Color(0.1f, 0.16f, 0.28f, 0.95f);
+            fillAreaBg.raycastTarget = false;
 
             GameObject fill = new GameObject("Fill");
             fill.transform.SetParent(fillArea.transform, false);
             RectTransform fillRect = fill.AddComponent<RectTransform>();
+            fillRect.anchorMin = new Vector2(0f, 0f);
+            fillRect.anchorMax = new Vector2(1f, 1f);
+            fillRect.offsetMin = Vector2.zero;
+            fillRect.offsetMax = Vector2.zero;
             Image fillImage = fill.AddComponent<Image>();
-            fillImage.color = new Color(0.2f, 0.72f, 1f, 0.9f);
+            fillImage.color = new Color(0.31f, 0.84f, 1f, 0.95f);
             slider.fillRect = fillRect;
 
             GameObject handle = new GameObject("Handle");
-            handle.transform.SetParent(go.transform, false);
+            GameObject handleSlideArea = new GameObject("Handle Slide Area");
+            handleSlideArea.transform.SetParent(go.transform, false);
+            RectTransform handleSlideAreaRect = handleSlideArea.AddComponent<RectTransform>();
+            handleSlideAreaRect.anchorMin = new Vector2(0f, 0f);
+            handleSlideAreaRect.anchorMax = new Vector2(1f, 1f);
+            handleSlideAreaRect.offsetMin = new Vector2(14f, 0f);
+            handleSlideAreaRect.offsetMax = new Vector2(-14f, 0f);
+
+            handle.transform.SetParent(handleSlideArea.transform, false);
             RectTransform handleRect = handle.AddComponent<RectTransform>();
-            handleRect.sizeDelta = new Vector2(26f, 46f);
+            handleRect.anchorMin = new Vector2(0f, 0.5f);
+            handleRect.anchorMax = new Vector2(0f, 0.5f);
+            handleRect.pivot = new Vector2(0.5f, 0.5f);
+            handleRect.sizeDelta = new Vector2(20f, 44f);
             Image handleImage = handle.AddComponent<Image>();
-            handleImage.color = new Color(0.88f, 0.96f, 1f, 1f);
+            handleImage.sprite = CreateSliderHandleSprite();
+            handleImage.type = Image.Type.Sliced;
+            handleImage.color = new Color(0.97f, 0.98f, 1f, 1f);
+            slider.targetGraphic = handleImage;
             slider.handleRect = handleRect;
 
             slider.direction = Slider.Direction.LeftToRight;
@@ -373,19 +497,9 @@ namespace StaticDrift.Managers
             rect.sizeDelta = new Vector2(380f, 94f);
 
             Image image = go.AddComponent<Image>();
-            image.color = new Color(0.1f, 0.19f, 0.36f, 0.95f);
             Button button = go.AddComponent<Button>();
             button.targetGraphic = image;
             button.onClick.AddListener(callback);
-            ColorBlock colors = button.colors;
-            colors.normalColor = new Color(0.14f, 0.24f, 0.42f, 0.96f);
-            colors.highlightedColor = new Color(0.34f, 0.62f, 0.95f, 1f);
-            colors.selectedColor = new Color(0.45f, 0.78f, 1f, 1f);
-            colors.pressedColor = new Color(0.95f, 0.70f, 0.30f, 1f);
-            colors.disabledColor = new Color(0.15f, 0.18f, 0.23f, 0.45f);
-            colors.colorMultiplier = 1f;
-            colors.fadeDuration = 0.05f;
-            button.colors = colors;
             go.AddComponent<UiSelectOnPointerEnter>();
 
             GameObject textGo = new GameObject("Label");
@@ -393,15 +507,22 @@ namespace StaticDrift.Managers
             RectTransform textRect = textGo.AddComponent<RectTransform>();
             textRect.anchorMin = Vector2.zero;
             textRect.anchorMax = Vector2.one;
-            textRect.offsetMin = Vector2.zero;
-            textRect.offsetMax = Vector2.zero;
+            textRect.offsetMin = new Vector2(20f, 10f);
+            textRect.offsetMax = new Vector2(-20f, -10f);
             TMP_Text text = textGo.AddComponent<TextMeshProUGUI>();
             text.text = label;
             text.fontSize = 46f;
             text.fontStyle = FontStyles.Bold;
             text.alignment = TextAlignmentOptions.Center;
             text.color = new Color(0.88f, 0.97f, 1f, 1f);
+            text.enableWordWrapping = true;
+            text.overflowMode = TextOverflowModes.Ellipsis;
+            text.enableAutoSizing = true;
+            text.fontSizeMin = 18f;
+            text.fontSizeMax = 46f;
+            text.lineSpacing = -8f;
             text.raycastTarget = false;
+            PixelArtUiSkin.ApplyButtonStyle(button, image, text);
             return button;
         }
 
@@ -441,7 +562,6 @@ namespace StaticDrift.Managers
                 return sb.ToString();
             }
 
-            sb.Append("Current Top Scores\n\n");
             for (int i = 0; i < scores.Count; i++)
             {
                 sb.Append(i + 1);
@@ -459,6 +579,69 @@ namespace StaticDrift.Managers
 #if UNITY_EDITOR
             EditorApplication.isPlaying = false;
 #endif
+        }
+
+        private static Sprite CreateSliderFrameSprite()
+        {
+            return CreatePixelRectSprite(
+                "pixel_slider_frame",
+                32,
+                16,
+                new Color32(8, 16, 32, 255),
+                new Color32(190, 226, 255, 255),
+                new Color32(23, 40, 74, 255),
+                new Color32(52, 83, 149, 255));
+        }
+
+        private static Sprite CreateSliderHandleSprite()
+        {
+            return CreatePixelRectSprite(
+                "pixel_slider_handle",
+                16,
+                24,
+                new Color32(11, 18, 35, 255),
+                new Color32(232, 245, 255, 255),
+                new Color32(34, 56, 92, 255),
+                new Color32(109, 164, 235, 255));
+        }
+
+        private static Sprite CreatePixelRectSprite(string name, int width, int height, Color32 border, Color32 highlight, Color32 shadow, Color32 fill)
+        {
+            Texture2D texture = new Texture2D(width, height, TextureFormat.RGBA32, false);
+            texture.filterMode = FilterMode.Point;
+            texture.wrapMode = TextureWrapMode.Clamp;
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    Color32 color = fill;
+                    if (x == 0 || y == 0 || x == width - 1 || y == height - 1)
+                    {
+                        color = border;
+                    }
+                    else if (x == 1 || y == height - 2)
+                    {
+                        color = highlight;
+                    }
+                    else if (x == width - 2 || y == 1)
+                    {
+                        color = shadow;
+                    }
+
+                    texture.SetPixel(x, y, color);
+                }
+            }
+
+            texture.Apply();
+            return Sprite.Create(
+                texture,
+                new Rect(0f, 0f, width, height),
+                new Vector2(0.5f, 0.5f),
+                16f,
+                0,
+                SpriteMeshType.FullRect,
+                new Vector4(4f, 4f, 4f, 4f));
         }
 
         private static void SetSelected(GameObject selectedObject)

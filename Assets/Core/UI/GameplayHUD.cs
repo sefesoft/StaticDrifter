@@ -74,6 +74,7 @@ namespace StaticDrift.UI
                 _playerStatsText.gameObject.SetActive(false);
             }
 
+            ApplyFonts();
             ApplyHudVisualStyle();
         }
 
@@ -360,74 +361,83 @@ namespace StaticDrift.UI
             if (_timerText != null)
             {
                 _timerText.fontStyle = FontStyles.Bold;
+                _timerText.fontSize = 52f;
                 _timerText.color = new Color(0.79f, 0.95f, 1f, 1f);
-                _timerText.outlineWidth = 0.22f;
-                _timerText.outlineColor = new Color(0.02f, 0.04f, 0.08f, 0.95f);
+                GameFontLibrary.ApplyOutline(_timerText, 0.22f, new Color(0.02f, 0.04f, 0.08f, 0.95f));
             }
 
             if (_playerStatsText != null)
             {
                 _playerStatsText.fontStyle = FontStyles.Bold;
                 _playerStatsText.color = new Color(0.95f, 0.98f, 1f, 0.98f);
-                _playerStatsText.outlineWidth = 0.2f;
-                _playerStatsText.outlineColor = new Color(0.04f, 0.06f, 0.1f, 0.9f);
+                GameFontLibrary.ApplyOutline(_playerStatsText, 0.2f, new Color(0.04f, 0.06f, 0.1f, 0.9f));
             }
 
             if (_scoreText != null)
             {
                 _scoreText.fontStyle = FontStyles.Bold;
+                _scoreText.fontSize = 48f;
                 _scoreText.color = new Color(1f, 0.89f, 0.45f, 0.98f);
-                _scoreText.outlineWidth = 0.18f;
-                _scoreText.outlineColor = new Color(0.06f, 0.06f, 0.08f, 0.9f);
+                GameFontLibrary.ApplyOutline(_scoreText, 0.18f, new Color(0.06f, 0.06f, 0.08f, 0.9f));
             }
 
             if (_waveText != null)
             {
                 _waveText.fontStyle = FontStyles.Bold;
+                _waveText.fontSize = 48f;
                 _waveText.color = new Color(0.73f, 1f, 0.86f, 0.98f);
-                _waveText.outlineWidth = 0.18f;
-                _waveText.outlineColor = new Color(0.04f, 0.08f, 0.07f, 0.9f);
+                GameFontLibrary.ApplyOutline(_waveText, 0.18f, new Color(0.04f, 0.08f, 0.07f, 0.9f));
             }
 
             if (_buildText != null)
             {
                 _buildText.fontStyle = FontStyles.Bold;
                 _buildText.color = new Color(0.86f, 0.83f, 1f, 0.98f);
-                _buildText.outlineWidth = 0.16f;
-                _buildText.outlineColor = new Color(0.05f, 0.05f, 0.09f, 0.9f);
+                GameFontLibrary.ApplyOutline(_buildText, 0.16f, new Color(0.05f, 0.05f, 0.09f, 0.9f));
                 _buildText.enableWordWrapping = true;
-                _buildText.fontSize = 28f;
-                _buildText.lineSpacing = -20f;
+                _buildText.fontSize = 40f;
+                _buildText.lineSpacing = -8f;
             }
 
             if (_playerHpText != null)
             {
                 _playerHpText.fontStyle = FontStyles.Bold;
+                _playerHpText.fontSize = 34f;
                 _playerHpText.color = new Color(0.95f, 0.98f, 1f, 1f);
-                _playerHpText.outlineWidth = 0.16f;
-                _playerHpText.outlineColor = new Color(0.04f, 0.06f, 0.1f, 0.9f);
+                GameFontLibrary.ApplyOutline(_playerHpText, 0.16f, new Color(0.04f, 0.06f, 0.1f, 0.9f));
             }
 
             if (_bossHpText != null)
             {
-                _bossHpText.outlineWidth = 0.16f;
-                _bossHpText.outlineColor = new Color(0.1f, 0.04f, 0.04f, 0.95f);
+                _bossHpText.fontSize = 36f;
+                GameFontLibrary.ApplyOutline(_bossHpText, 0.16f, new Color(0.1f, 0.04f, 0.04f, 0.95f));
             }
+        }
+
+        private void ApplyFonts()
+        {
+            GameFontLibrary.Apply(_timerText);
+            GameFontLibrary.Apply(_playerStatsText);
+            GameFontLibrary.Apply(_scoreText);
+            GameFontLibrary.Apply(_waveText);
+            GameFontLibrary.Apply(_buildText);
+            GameFontLibrary.Apply(_bossHpText);
+            GameFontLibrary.Apply(_playerHpText);
         }
 
         private void EnsureInfoLabels()
         {
             if (_scoreText == null)
             {
-                _scoreText = CreateInfoLabel("ScoreText", new Vector2(0.04f, 0.955f), TextAlignmentOptions.Left, "SCORE 0", new Vector2(320f, 60f));
+                _scoreText = CreateInfoLabel("ScoreText", new Vector2(0.04f, 0.955f), TextAlignmentOptions.Left, "SCORE 0", new Vector2(520f, 86f));
             }
             if (_waveText == null)
             {
-                _waveText = CreateInfoLabel("WaveText", new Vector2(0.965f, 0.955f), TextAlignmentOptions.Right, "WAVE 1", new Vector2(260f, 60f));
+                _waveText = CreateInfoLabel("WaveText", new Vector2(0.965f, 0.955f), TextAlignmentOptions.Right, "WAVE 1", new Vector2(400f, 86f));
             }
             if (_buildText == null)
             {
-                _buildText = CreateInfoLabel("BuildText", new Vector2(0.965f, 0.90f), TextAlignmentOptions.Right, "BUILD V0 K0 T0 S0", new Vector2(500f, 92f));
+                _buildText = CreateInfoLabel("BuildText", new Vector2(0.965f, 0.90f), TextAlignmentOptions.Right, "BUILD V0 K0 T0 S0", new Vector2(760f, 132f));
             }
         }
 
@@ -461,7 +471,7 @@ namespace StaticDrift.UI
             rect.anchorMin = new Vector2(0.5f, 0.885f);
             rect.anchorMax = new Vector2(0.5f, 0.885f);
             rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.sizeDelta = new Vector2(640f, 34f);
+            rect.sizeDelta = new Vector2(720f, 44f);
 
             Image bg = panel.AddComponent<Image>();
             bg.color = new Color(0.08f, 0.04f, 0.05f, 0.92f);
@@ -488,7 +498,8 @@ namespace StaticDrift.UI
             labelRect.offsetMin = Vector2.zero;
             labelRect.offsetMax = Vector2.zero;
             TMP_Text labelText = labelGo.AddComponent<TextMeshProUGUI>();
-            labelText.fontSize = 24f;
+            GameFontLibrary.Apply(labelText);
+            labelText.fontSize = 34f;
             labelText.fontStyle = FontStyles.Bold;
             labelText.alignment = TextAlignmentOptions.Center;
             labelText.color = new Color(1f, 0.92f, 0.9f, 1f);
@@ -532,7 +543,7 @@ namespace StaticDrift.UI
             rect.anchorMin = new Vector2(0.5f, 0.07f);
             rect.anchorMax = new Vector2(0.5f, 0.07f);
             rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.sizeDelta = new Vector2(360f, 42f);
+            rect.sizeDelta = new Vector2(420f, 50f);
 
             Image bg = panel.AddComponent<Image>();
             bg.color = new Color(0.08f, 0.12f, 0.18f, 0.92f);
@@ -559,7 +570,8 @@ namespace StaticDrift.UI
             labelRect.offsetMin = Vector2.zero;
             labelRect.offsetMax = Vector2.zero;
             TMP_Text labelText = labelGo.AddComponent<TextMeshProUGUI>();
-            labelText.fontSize = 24f;
+            GameFontLibrary.Apply(labelText);
+            labelText.fontSize = 32f;
             labelText.fontStyle = FontStyles.Bold;
             labelText.alignment = TextAlignmentOptions.Center;
             labelText.color = new Color(0.95f, 0.98f, 1f, 1f);
@@ -591,14 +603,10 @@ namespace StaticDrift.UI
             rect.anchorMin = new Vector2(1f, 1f);
             rect.anchorMax = new Vector2(1f, 1f);
             rect.pivot = new Vector2(1f, 1f);
-            rect.anchoredPosition = new Vector2(-36f, -32f);
-            rect.sizeDelta = new Vector2(100f, 100f);
+            rect.anchoredPosition = new Vector2(-32f, -128f);
+            rect.sizeDelta = new Vector2(86f, 86f);
 
             Image image = buttonGo.AddComponent<Image>();
-            image.sprite = GetCircleButtonSprite();
-            image.type = Image.Type.Sliced;
-            image.color = new Color(0.12f, 0.16f, 0.25f, 0.62f);
-
             Button button = buttonGo.AddComponent<Button>();
             button.targetGraphic = image;
             button.onClick.AddListener(() =>
@@ -627,6 +635,7 @@ namespace StaticDrift.UI
             text.color = new Color(0.88f, 0.97f, 1f, 1f);
             text.raycastTarget = false;
 
+            PixelArtUiSkin.ApplyButtonStyle(button, image, text);
             _pauseButton = button;
         }
 
@@ -641,7 +650,8 @@ namespace StaticDrift.UI
             rect.sizeDelta = size;
             TMP_Text text = go.AddComponent<TextMeshProUGUI>();
             text.text = startText;
-            text.fontSize = 34f;
+            GameFontLibrary.Apply(text);
+            text.fontSize = 46f;
             text.alignment = alignment;
             text.raycastTarget = false;
             return text;
