@@ -16,6 +16,8 @@ namespace StaticDrift.UI
     {
         [SerializeField] private TMP_Text _timerText;
         [SerializeField] private TMP_Text _playerStatsText;
+        [SerializeField] private TMP_Text _scoreText;
+        [SerializeField] private TMP_Text _waveText;
         [SerializeField] private string _statsFormat = "HP: {0:F0} / {1:F0}";
         [SerializeField] private bool _createTouchControls = true;
 
@@ -52,6 +54,8 @@ namespace StaticDrift.UI
                 EnsureTouchControls();
             }
 
+            EnsureInfoLabels();
+
             ApplyHudVisualStyle();
         }
 
@@ -67,6 +71,16 @@ namespace StaticDrift.UI
                 int minutes = totalSeconds / 60;
                 int seconds = totalSeconds % 60;
                 _timerText.text = minutes.ToString("00") + ":" + seconds.ToString("00");
+            }
+
+            if (_scoreText != null && MatchController.Instance != null)
+            {
+                _scoreText.text = "SCORE " + MatchController.Instance.Score;
+            }
+
+            if (_waveText != null && MatchController.Instance != null)
+            {
+                _waveText.text = "WAVE " + MatchController.Instance.CurrentWave;
             }
 
             if (_playerStatsText != null && _playerHealth != null)
@@ -203,6 +217,50 @@ namespace StaticDrift.UI
                 _playerStatsText.outlineWidth = 0.2f;
                 _playerStatsText.outlineColor = new Color(0.04f, 0.06f, 0.1f, 0.9f);
             }
+
+            if (_scoreText != null)
+            {
+                _scoreText.fontStyle = FontStyles.Bold;
+                _scoreText.color = new Color(1f, 0.89f, 0.45f, 0.98f);
+                _scoreText.outlineWidth = 0.18f;
+                _scoreText.outlineColor = new Color(0.06f, 0.06f, 0.08f, 0.9f);
+            }
+
+            if (_waveText != null)
+            {
+                _waveText.fontStyle = FontStyles.Bold;
+                _waveText.color = new Color(0.73f, 1f, 0.86f, 0.98f);
+                _waveText.outlineWidth = 0.18f;
+                _waveText.outlineColor = new Color(0.04f, 0.08f, 0.07f, 0.9f);
+            }
+        }
+
+        private void EnsureInfoLabels()
+        {
+            if (_scoreText == null)
+            {
+                _scoreText = CreateInfoLabel("ScoreText", new Vector2(0.08f, 0.94f), TextAlignmentOptions.Left, "SCORE 0");
+            }
+            if (_waveText == null)
+            {
+                _waveText = CreateInfoLabel("WaveText", new Vector2(0.92f, 0.94f), TextAlignmentOptions.Right, "WAVE 1");
+            }
+        }
+
+        private TMP_Text CreateInfoLabel(string name, Vector2 anchor, TextAlignmentOptions alignment, string startText)
+        {
+            GameObject go = new GameObject(name);
+            go.transform.SetParent(transform, false);
+            RectTransform rect = go.AddComponent<RectTransform>();
+            rect.anchorMin = anchor;
+            rect.anchorMax = anchor;
+            rect.pivot = new Vector2(anchor.x < 0.5f ? 0f : 1f, 0.5f);
+            rect.sizeDelta = new Vector2(360f, 60f);
+            TMP_Text text = go.AddComponent<TextMeshProUGUI>();
+            text.text = startText;
+            text.fontSize = 34f;
+            text.alignment = alignment;
+            return text;
         }
 
         private static Sprite GetCircleButtonSprite()
@@ -256,6 +314,28 @@ namespace StaticDrift.UI
             {
                 _accelerateHeld = isHeld;
             }
+        }
+
+        private void OnValidate()
+        {
+            if (_scoreText == null)
+            {
+                _scoreText = FindTextByName("ScoreText");
+            }
+            if (_waveText == null)
+            {
+                _waveText = FindTextByName("WaveText");
+            }
+        }
+
+        private TMP_Text FindTextByName(string name)
+        {
+            Transform t = transform.Find(name);
+            if (t == null)
+            {
+                return null;
+            }
+            return t.GetComponent<TMP_Text>();
         }
     }
 }

@@ -2,12 +2,15 @@ using UnityEngine;
 using StaticDrift.Pooling;
 using System.Collections.Generic;
 using StaticDrift.Player;
+using System;
 
 namespace StaticDrift.Enemies
 {
     [RequireComponent(typeof(Rigidbody2D))]
     public class Asteroid : MonoBehaviour, IDamageable
     {
+        public static event Action<AsteroidSize> AsteroidDestroyed;
+
         public enum AsteroidSize
         {
             Large,
@@ -93,6 +96,8 @@ namespace StaticDrift.Enemies
             {
                 _spawner.HandleAsteroidDestroyed(_size, transform.position, _rigidbody2D.linearVelocity);
             }
+
+            AsteroidDestroyed?.Invoke(_size);
 
             Despawn();
         }
@@ -231,7 +236,7 @@ namespace StaticDrift.Enemies
                 Vector2 pushDir = playerBody.position - _rigidbody2D.position;
                 if (pushDir.sqrMagnitude < 0.0001f)
                 {
-                    pushDir = Random.insideUnitCircle.normalized;
+                    pushDir = UnityEngine.Random.insideUnitCircle.normalized;
                 }
                 else
                 {

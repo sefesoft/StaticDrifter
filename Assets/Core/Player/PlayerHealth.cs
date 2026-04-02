@@ -15,6 +15,7 @@ namespace StaticDrift.Player
 
         public float CurrentHealth => _currentHealth;
         public float MaxHealth => _maxHealth;
+        public bool IsDead => _currentHealth <= 0f;
 
         private void Awake()
         {

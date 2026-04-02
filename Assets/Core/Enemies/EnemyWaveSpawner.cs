@@ -1,5 +1,6 @@
 using UnityEngine;
 using StaticDrift.Pooling;
+using System.Collections.Generic;
 
 namespace StaticDrift.Enemies
 {
@@ -34,7 +35,7 @@ namespace StaticDrift.Enemies
         [SerializeField] private Camera _camera;
         [SerializeField] private AsteroidPools _asteroidPools = new AsteroidPools();
         [SerializeField] private AsteroidStats _asteroidStats = new AsteroidStats();
-        [SerializeField] private float _spawnInterval = 1.2f;
+        [SerializeField] private float _spawnInterval = 2.2f;
         [SerializeField] private float _spawnEdgeMargin = 1f;
         [SerializeField] private float _screenWrapMargin = 0.8f;
         [SerializeField] private float _minSpeed = 1.8f;
@@ -42,8 +43,13 @@ namespace StaticDrift.Enemies
         [SerializeField] private float _spawnWeightLarge = 0.45f;
         [SerializeField] private float _spawnWeightMedium = 0.35f;
         [SerializeField] private float _spawnWeightSmall = 0.20f;
+        [SerializeField] private float _minSpawnInterval = 0.28f;
 
         private float _spawnTimer;
+        private float _effectiveSpawnInterval;
+        private float _effectiveMinSpeed;
+        private float _effectiveMaxSpeed;
+        private bool _spawningEnabled = true;
 
         public Camera ActiveCamera => _camera != null ? _camera : Camera.main;
 
@@ -53,6 +59,10 @@ namespace StaticDrift.Enemies
             {
                 _camera = Camera.main;
             }
+
+            _effectiveSpawnInterval = _spawnInterval;
+            _effectiveMinSpeed = _minSpeed;
+            _effectiveMaxSpeed = _maxSpeed;
         }
 
         private void Update()
@@ -62,14 +72,63 @@ namespace StaticDrift.Enemies
                 return;
             }
 
+            if (!_spawningEnabled)
+            {
+                return;
+            }
+
             _spawnTimer += Time.deltaTime;
-            if (_spawnTimer < _spawnInterval)
+            if (_spawnTimer < _effectiveSpawnInterval)
             {
                 return;
             }
 
             _spawnTimer = 0f;
             SpawnRandomAsteroid(GetOffCameraSpawnPosition(_spawnEdgeMargin), default(Vector2), false);
+        }
+
+        public void SetSpawningEnabled(bool enabled)
+        {
+            _spawningEnabled = enabled;
+            if (!enabled)
+            {
+                _spawnTimer = 0f;
+            }
+        }
+
+        public void ClearActiveAsteroids()
+        {
+            Asteroid[] asteroids = FindObjectsByType<Asteroid>(FindObjectsSortMode.None);
+            int count = asteroids != null ? asteroids.Length : 0;
+            for (int i = 0; i < count; i++)
+            {
+                Asteroid asteroid = asteroids[i];
+                if (asteroid == null)
+                {
+                    continue;
+                }
+
+                if (_pooler != null)
+                {
+                    _pooler.Despawn(asteroid.gameObject);
+                }
+                else
+                {
+                    asteroid.gameObject.SetActive(false);
+                }
+            }
+        }
+
+        public void ConfigureForWave(int waveIndex)
+        {
+            int wave = Mathf.Max(1, waveIndex);
+            float progress = wave - 1;
+
+            float interval = _spawnInterval * Mathf.Pow(0.92f, progress);
+            _effectiveSpawnInterval = Mathf.Max(_minSpawnInterval, interval);
+
+            _effectiveMinSpeed = _minSpeed + (0.18f * progress);
+            _effectiveMaxSpeed = _maxSpeed + (0.24f * progress);
         }
 
         public void HandleAsteroidDestroyed(Asteroid.AsteroidSize destroyedSize, Vector2 origin, Vector2 parentVelocity)
@@ -133,7 +192,7 @@ namespace StaticDrift.Enemies
                 direction = Random.insideUnitCircle.normalized;
             }
 
-            float speed = Random.Range(_minSpeed, _maxSpeed);
+            float speed = Random.Range(_effectiveMinSpeed, _effectiveMaxSpeed);
             Vector2 velocity = direction * speed;
             if (fromSplit)
             {

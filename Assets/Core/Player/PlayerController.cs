@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+using StaticDrift.Managers;
 
 namespace StaticDrift.Player
 {
@@ -19,6 +20,7 @@ namespace StaticDrift.Player
         private bool _accelerateHeldByUI;
         private float _rotateDirectionInput;
         private bool _accelerateInput;
+        public bool IsAccelerating => _accelerateInput;
 
         private void Awake()
         {
@@ -72,7 +74,8 @@ namespace StaticDrift.Player
 
             if (Mathf.Abs(_rotateDirectionInput) > 0.01f)
             {
-                float nextRotation = _rigidbody2D.rotation + (_rotateDirectionInput * _rotationSpeed * dt);
+                float sensitivity = GameSettings.RotationSensitivity;
+                float nextRotation = _rigidbody2D.rotation + (_rotateDirectionInput * _rotationSpeed * sensitivity * dt);
                 _rigidbody2D.MoveRotation(nextRotation);
             }
 
