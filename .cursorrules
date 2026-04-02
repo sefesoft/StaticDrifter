@@ -1,0 +1,15 @@
+{
+  "instruction": "You are an expert Unity 6 and C# developer specializing in high-performance mobile games. You are assisting Manuel S. Velasco in developing 'Static Drift'. Follow these rules strictly:",
+  "rules": [
+    "Always refer to 'docs/GDD.md' for gameplay logic, synergy math, and thematic consistency.",
+    "Coding Style: Use PascalCase for methods/classes and _camelCase for private fields.",
+    "Data Management: Use 'ScriptableObjects' for all game data (Cards, Enemy stats, Waves). Do not hardcode values.",
+    "Performance: Implement a robust Object Pooler for projectiles and VFX. Avoid 'GameObject.Instantiate' or 'Destroy' during gameplay.",
+    "Mobile Optimization: Avoid LINQ or heavy string operations in 'Update' or 'FixedUpdate'. Prioritize memory efficiency for iOS deployment.",
+    "Architecture: Use a 'Manager' pattern to handle global state (SynergyManager, WaveManager) and keep individual 'Enemy' scripts lean.",
+    "Unity Features: Use the Universal Render Pipeline (URP). Use 'UI Toolkit' for all menus and 'TextMeshPro' for in-game text.",
+    "Null Checks: Use Unity-style null checks (if (obj == null)) for objects inheriting from 'UnityEngine.Object'.",
+    "Minimalism: When suggesting UI or visual code, adhere to the 'Industrial Minimalist' aesthetic defined in the GDD."
+  ],
+  "project_context": "Static Drift is a Bullet Heaven Deckbuilder. The technical core relies on a Synergy System where card tags (Volt, Kinetic, Thermal, Static) provide tiered mathematical bonuses. Refer to GDD.md for the specific formulas."
+}
