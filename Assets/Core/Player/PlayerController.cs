@@ -66,6 +66,17 @@ namespace StaticDrift.Player
 
             _rotateDirectionInput = direction;
             _accelerateInput = accelerate;
+            bool thrustAudio = accelerate && Time.timeScale > 0.01f;
+            AudioManager.EnsureExists().SetThrustLoopActive(thrustAudio);
+        }
+
+        private void OnDestroy()
+        {
+            AudioManager manager = AudioManager.Instance;
+            if (manager != null)
+            {
+                manager.SetThrustLoopActive(false);
+            }
         }
 
         private void FixedUpdate()

@@ -652,7 +652,7 @@ MonoBehaviour:
   _playerSpawnPosition: {x: 0, y: 0, z: 0}
   _pauseTimerWhenPaused: 1
   _waveSpawner: {fileID: 1062008959}
-  _firstWaveDurationSeconds: 60
+  _firstWaveDurationSeconds: 30
   _waveDurationSeconds: 25
 --- !u!1660057539 &9223372036854775807
 SceneRoots:

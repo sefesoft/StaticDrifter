@@ -43,11 +43,11 @@ Primary direction is **Proposal A: Pure Asteroids Roguelike**.
 * **Audio:** Punchy retro-futurist impact palette with rhythm-forward combat layering.
 
 ## 7. Development Roadmap (Pivot)
-- [ ] **Phase 1: Flight Core** - Ship thrust/rotation/drift, wraparound space rules, shooting baseline.
-- [ ] **Phase 2: Asteroid Ecology** - Spawn bands, fragmentation behavior, hazard pacing.
-- [ ] **Phase 3: Roguelike Run Layer** - Draft cadence, upgrade pools, synergy scaling.
-- [ ] **Phase 4: Encounter Structure** - Elites, bosses, and run checkpoint logic.
-- [ ] **Phase 5: Meta Progression** - Unlock trees, ship modules, and challenge modifiers.
+- [x] **Phase 1: Flight Core** - Ship thrust/rotation/drift, wraparound space rules, shooting baseline.
+- [x] **Phase 2: Asteroid Ecology** - Spawn bands, fragmentation behavior, hazard pacing.
+- [x] **Phase 3: Roguelike Run Layer (MVP)** - Wave interlude drafts with Volt/Kinetic/Thermal/Static upgrades that modify live run combat stats.
+- [x] **Phase 4: Encounter Structure (MVP)** - Escalating wave pressure with periodic elite wave profiles and interlude pacing.
+- [x] **Phase 5: Meta Progression (MVP)** - Local persistent top scores plus persistent scrap total earned across runs.
 
 ## 8. Why This Pivot Works
 Asteroids gameplay and roguelike progression are a strong fit: piloting depth keeps minute-to-minute action engaging, while run-based drafting prevents repetition and creates long-term replayability. This combination supports both high skill ceilings and broad build experimentation.
@@ -62,5 +62,5 @@ Asteroids gameplay and roguelike progression are a strong fit: piloting depth ke
 * **Risk:** Scope drift while pivoting.
   * **Mitigation:** Lock Proposal A for MVP; postpone sector-routing/shop systems until post-core validation.
 
-## 10. Next Documentation Step
-After this README pivot, the next action is to align `docs/GDD.md` with the Asteroids-roguelike direction so formulas, terminology, and milestone scope remain consistent across design and implementation.
+## 10. Current Playable Slice
+The current build supports a full run loop: title -> gameplay -> escalating asteroid/drone waves -> interlude draft choices -> elite wave spikes -> game over with top scores and persistent scrap. Next extension focus is boss encounters and spendable meta progression modules.

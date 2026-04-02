@@ -1,6 +1,7 @@
 # Unity generated folders
 [Ll]ibrary/
 [Tt]emp/
+.utmp/
 [Oo]bj/
 [Bb]uild/
 [Bb]uilds/
@@ -36,6 +37,19 @@ il2cpp_cache/
 sysinfo.txt
 *.stacktrace
 *.crash
+
+# Android build artifacts
+*.apk
+*.aab
+*.apks
+*.abb
+*.obb
+*.keystore
+*.jks
+ExportedProject/
+AndroidBuild/
+AndroidBuilds/
+gradleOut/
 
 # IDE / editor folders
 .idea/

@@ -1,8 +1,8 @@
 using UnityEngine;
 using StaticDrift.Pooling;
-using System.Collections.Generic;
 using StaticDrift.Player;
 using System;
+using StaticDrift.Managers;
 
 namespace StaticDrift.Enemies
 {
@@ -27,7 +27,8 @@ namespace StaticDrift.Enemies
         private float _health;
         private float _screenWrapMargin;
         private float _nextPlayerCollisionTime;
-        private static readonly Dictionary<AsteroidSize, Sprite> _spriteBySize = new Dictionary<AsteroidSize, Sprite>(3);
+        private Vector2 _baseVelocity;
+        private float _lastSpeedMultiplier = 1f;
 
         private void Awake()
         {
@@ -67,15 +68,24 @@ namespace StaticDrift.Enemies
             _spawner = spawner;
 
             transform.localScale = visualScale;
-            ApplySizeVisual(size);
+            ApplySizeVisual();
             MatchColliderToSprite();
-            _rigidbody2D.linearVelocity = velocity;
+            _baseVelocity = velocity;
+            _lastSpeedMultiplier = PlayerPowerupController.GlobalEnemySpeedMultiplier;
+            _rigidbody2D.linearVelocity = _baseVelocity * _lastSpeedMultiplier;
             _rigidbody2D.angularVelocity = angularVelocity;
             _nextPlayerCollisionTime = 0f;
         }
 
         private void Update()
         {
+            float speedMultiplier = PlayerPowerupController.GlobalEnemySpeedMultiplier;
+            if (Mathf.Abs(speedMultiplier - _lastSpeedMultiplier) > 0.01f)
+            {
+                _lastSpeedMultiplier = speedMultiplier;
+                _rigidbody2D.linearVelocity = _baseVelocity * _lastSpeedMultiplier;
+            }
+
             WrapAtScreenEdges();
         }
 
@@ -89,6 +99,7 @@ namespace StaticDrift.Enemies
             _health -= amount;
             if (_health > 0f)
             {
+                AudioManager.EnsureExists().PlayAsteroidHit();
                 return;
             }
 
@@ -98,6 +109,7 @@ namespace StaticDrift.Enemies
             }
 
             AsteroidDestroyed?.Invoke(_size);
+            AudioManager.EnsureExists().PlayAsteroidBreak();
 
             Despawn();
         }
@@ -162,21 +174,12 @@ namespace StaticDrift.Enemies
             }
         }
 
-        private void ApplySizeVisual(AsteroidSize size)
+        private void ApplySizeVisual()
         {
             if (_spriteRenderer == null)
             {
                 return;
             }
-
-            Sprite sprite;
-            if (!_spriteBySize.TryGetValue(size, out sprite) || sprite == null)
-            {
-                sprite = CreateAsteroidSprite(size);
-                _spriteBySize[size] = sprite;
-            }
-
-            _spriteRenderer.sprite = sprite;
         }
 
         private void MatchColliderToSprite()
@@ -283,66 +286,5 @@ namespace StaticDrift.Enemies
             return 1.2f;
         }
 
-        private static Sprite CreateAsteroidSprite(AsteroidSize size)
-        {
-            int textureSize = 128;
-            int radius = size == AsteroidSize.Large ? 56 : (size == AsteroidSize.Medium ? 49 : 42);
-            float noise = size == AsteroidSize.Large ? 0.10f : (size == AsteroidSize.Medium ? 0.13f : 0.16f);
-            Color color = size == AsteroidSize.Large
-                ? new Color(0.70f, 0.72f, 0.74f, 1f)
-                : (size == AsteroidSize.Medium
-                    ? new Color(0.68f, 0.69f, 0.72f, 1f)
-                    : new Color(0.62f, 0.64f, 0.67f, 1f));
-
-            Texture2D tex = new Texture2D(textureSize, textureSize, TextureFormat.RGBA32, false);
-            tex.filterMode = FilterMode.Bilinear;
-            tex.wrapMode = TextureWrapMode.Clamp;
-
-            Vector2 center = new Vector2((textureSize - 1) * 0.5f, (textureSize - 1) * 0.5f);
-            float invRadius = 1f / radius;
-
-            for (int y = 0; y < textureSize; y++)
-            {
-                for (int x = 0; x < textureSize; x++)
-                {
-                    float dx = x - center.x;
-                    float dy = y - center.y;
-                    float dist = Mathf.Sqrt(dx * dx + dy * dy);
-                    float normalized = dist * invRadius;
-
-                    float angle = Mathf.Atan2(dy, dx);
-                    float shapeNoise =
-                        Mathf.Sin(angle * 4.1f) * noise +
-                        Mathf.Sin(angle * 7.6f + 0.6f) * (noise * 0.35f);
-                    float edge = 1f + shapeNoise;
-
-                    if (normalized <= edge)
-                    {
-                        float shade = 1f - Mathf.Clamp01(normalized) * 0.25f;
-                        float alpha = 1f;
-                        float edgeFadeStart = edge - 0.04f;
-                        if (normalized > edgeFadeStart)
-                        {
-                            alpha = Mathf.Clamp01((edge - normalized) / (edge - edgeFadeStart));
-                        }
-
-                        Color px = color * shade;
-                        px.a = alpha;
-                        tex.SetPixel(x, y, px);
-                    }
-                    else
-                    {
-                        tex.SetPixel(x, y, new Color(0f, 0f, 0f, 0f));
-                    }
-                }
-            }
-
-            tex.Apply();
-            return Sprite.Create(
-                tex,
-                new Rect(0f, 0f, textureSize, textureSize),
-                new Vector2(0.5f, 0.5f),
-                100f);
-        }
     }
 }

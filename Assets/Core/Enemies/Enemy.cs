@@ -73,7 +73,8 @@ namespace StaticDrift.Enemies
             }
 
             delta.Normalize();
-            Vector2 next = self + delta * (_data.MoveSpeed * Time.deltaTime);
+            float speedMultiplier = PlayerPowerupController.GlobalEnemySpeedMultiplier;
+            Vector2 next = self + delta * (_data.MoveSpeed * speedMultiplier * Time.deltaTime);
             _rigidbody2D.MovePosition(next);
         }
 

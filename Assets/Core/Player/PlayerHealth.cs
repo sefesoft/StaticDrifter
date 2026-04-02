@@ -1,4 +1,5 @@
 using UnityEngine;
+using StaticDrift.Managers;
 
 namespace StaticDrift.Player
 {
@@ -12,6 +13,7 @@ namespace StaticDrift.Player
 
         private float _currentHealth;
         private float _invulnerableUntil;
+        private float _incomingDamageMultiplier = 1f;
 
         public float CurrentHealth => _currentHealth;
         public float MaxHealth => _maxHealth;
@@ -29,6 +31,18 @@ namespace StaticDrift.Player
                 return;
             }
 
+            PlayerPowerupController powerups = GetComponent<PlayerPowerupController>();
+            if (powerups == null)
+            {
+                powerups = GetComponentInParent<PlayerPowerupController>();
+            }
+            if (powerups != null && powerups.IsDamageImmune)
+            {
+                return;
+            }
+
+            amount *= _incomingDamageMultiplier;
+
             float time = Time.time;
             if (time < _invulnerableUntil)
             {
@@ -41,12 +55,33 @@ namespace StaticDrift.Player
                 _currentHealth = 0f;
             }
 
+            AudioManager.EnsureExists().PlayPlayerHit();
+
             _invulnerableUntil = time + _invulnerabilityDuration;
         }
 
         public void HealFull()
         {
             _currentHealth = _maxHealth;
+        }
+
+        public void Heal(float amount)
+        {
+            if (amount <= 0f)
+            {
+                return;
+            }
+
+            _currentHealth += amount;
+            if (_currentHealth > _maxHealth)
+            {
+                _currentHealth = _maxHealth;
+            }
+        }
+
+        public void SetIncomingDamageMultiplier(float multiplier)
+        {
+            _incomingDamageMultiplier = Mathf.Max(0.1f, multiplier);
         }
     }
 }
