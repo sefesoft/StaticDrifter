@@ -29,6 +29,7 @@ namespace StaticDrift.Enemies
         private float _nextPlayerCollisionTime;
         private Vector2 _baseVelocity;
         private float _lastSpeedMultiplier = 1f;
+        private float _wrapProtectionUntil;
 
         private void Awake()
         {
@@ -75,6 +76,7 @@ namespace StaticDrift.Enemies
             _rigidbody2D.linearVelocity = _baseVelocity * _lastSpeedMultiplier;
             _rigidbody2D.angularVelocity = angularVelocity;
             _nextPlayerCollisionTime = 0f;
+            _wrapProtectionUntil = Time.time + 0.28f;
         }
 
         private void Update()
@@ -128,6 +130,11 @@ namespace StaticDrift.Enemies
 
         private void WrapAtScreenEdges()
         {
+            if (Time.time < _wrapProtectionUntil)
+            {
+                return;
+            }
+
             Camera cam = _spawner != null ? _spawner.ActiveCamera : Camera.main;
             if (cam == null || !cam.orthographic)
             {

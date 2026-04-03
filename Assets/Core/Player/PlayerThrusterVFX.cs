@@ -22,6 +22,8 @@ namespace StaticDrift.Player
         [SerializeField] private float _flashSpeed = 17f;
 
         private PlayerController _controller;
+        private bool _forceActive;
+        private float _manualIntensity = 1f;
         private static Sprite _sharedFlameSprite;
 
         private void Awake()
@@ -39,7 +41,7 @@ namespace StaticDrift.Player
                 return;
             }
 
-            bool active = _controller.IsAccelerating;
+            bool active = _forceActive || _controller.IsAccelerating;
             SetFlameActive(active);
             if (!active)
             {
@@ -49,7 +51,7 @@ namespace StaticDrift.Player
             float t = Time.time;
             float flicker = 0.68f + 0.32f * Mathf.Abs(Mathf.Sin(t * _flickerSpeed));
             float flash = 0.82f + 0.18f * Mathf.Sin(t * _flashSpeed);
-            float combined = flicker * flash;
+            float combined = flicker * flash * Mathf.Max(0.5f, _manualIntensity);
 
             Vector3 mainScale = Vector3.Lerp(_baseScale, _activeScale, combined);
             _flameRenderer.transform.localScale = mainScale;
@@ -74,6 +76,16 @@ namespace StaticDrift.Player
                 Color cc = _coreColor;
                 cc.a = 0.75f + 0.25f * combined;
                 _coreRenderer.color = cc;
+            }
+        }
+
+        public void SetManualThrusterOverride(bool active, float intensity = 1f)
+        {
+            _forceActive = active;
+            _manualIntensity = Mathf.Max(0.5f, intensity);
+            if (!active)
+            {
+                SetFlameActive(false);
             }
         }
 

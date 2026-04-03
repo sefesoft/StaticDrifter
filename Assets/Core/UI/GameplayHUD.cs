@@ -1,10 +1,12 @@
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.UI;
 using System.Collections.Generic;
 using StaticDrift.Player;
 using StaticDrift.Managers;
+using StaticDrift.Cards;
 using TMPro;
 
 namespace StaticDrift.UI
@@ -24,6 +26,7 @@ namespace StaticDrift.UI
         [SerializeField] private TMP_Text _bossHpText;
         [SerializeField] private GameObject _playerHpPanel;
         [SerializeField] private Image _playerHpFill;
+        [SerializeField] private RectTransform _playerHpFillRect;
         [SerializeField] private TMP_Text _playerHpText;
         [SerializeField] private Button _pauseButton;
         [SerializeField] private string _statsFormat = "HP: {0:F0} / {1:F0}";
@@ -37,27 +40,18 @@ namespace StaticDrift.UI
         private bool _accelerateHeld;
         private readonly Dictionary<string, RectTransform> _controlVisuals = new Dictionary<string, RectTransform>();
         private readonly Dictionary<string, Vector2> _controlVisualHomePositions = new Dictionary<string, Vector2>();
+        private readonly List<GameObject> _touchGameplayButtonRoots = new List<GameObject>(3);
+        private bool _touchGameplayButtonsVisible = true;
         private static Sprite _circleButtonSprite;
+        private TMP_Text[] _buildTagCountTexts;
+        private Image[] _buildSlotDiamonds;
+        private TMP_Text[] _buildSlotLetters;
 
         private const string PlayerTag = "Player";
 
         private void Start()
         {
-            GameObject playerGo = GameObject.FindGameObjectWithTag(PlayerTag);
-            if (playerGo != null)
-            {
-                _playerHealth = playerGo.GetComponent<PlayerHealth>();
-                if (_playerHealth == null)
-                {
-                    _playerHealth = playerGo.GetComponentInChildren<PlayerHealth>();
-                }
-
-                _playerController = playerGo.GetComponent<PlayerController>();
-                if (_playerController == null)
-                {
-                    _playerController = playerGo.GetComponentInChildren<PlayerController>();
-                }
-            }
+            TryBindPlayerReferences();
 
             if (_createTouchControls)
             {
@@ -65,6 +59,8 @@ namespace StaticDrift.UI
             }
 
             EnsureInfoLabels();
+            EnsureTimerWaveCluster();
+            EnsureBuildUpgradeRow();
             EnsureBossPanel();
             EnsurePlayerHpPanel();
             EnsurePauseButton();
@@ -125,9 +121,27 @@ namespace StaticDrift.UI
                 _waveText.text = "WAVE " + MatchController.Instance.CurrentWave;
             }
 
-            if (_buildText != null && MatchController.Instance != null)
+            if (_buildText != null)
             {
-                _buildText.text = "BUILD " + MatchController.Instance.BuildSummary;
+                _buildText.text = "BUILD";
+            }
+
+            RunUpgradeController runUpgrades = RunUpgradeController.Instance;
+            if (_buildTagCountTexts != null && _buildTagCountTexts.Length == 4 && runUpgrades != null
+                && _buildSlotDiamonds != null && _buildSlotLetters != null)
+            {
+                for (int i = 0; i < 4; i++)
+                {
+                    CardTag tag = runUpgrades.GetLoadoutSlotTag(i);
+                    _buildTagCountTexts[i].text = runUpgrades.GetLoadoutSlotStacksText(i);
+                    _buildSlotLetters[i].text = GetHudLoadoutLetter(tag);
+                    _buildSlotDiamonds[i].color = tag == CardTag.None
+                        ? new Color(0.32f, 0.36f, 0.42f, 0.55f)
+                        : UpgradeHudVisuals.GetTagColor(tag);
+                    _buildSlotLetters[i].color = tag == CardTag.None
+                        ? new Color(0.82f, 0.86f, 0.92f, 1f)
+                        : new Color(0.04f, 0.05f, 0.08f, 1f);
+                }
             }
 
             if (MatchController.Instance != null)
@@ -152,14 +166,31 @@ namespace StaticDrift.UI
                 }
             }
 
+            if (_playerHealth == null)
+            {
+                TryBindPlayerReferences();
+            }
+
             if (_playerHpFill != null && _playerHealth != null)
             {
-                _playerHpFill.fillAmount = Mathf.Clamp01(_playerHealth.CurrentHealth / Mathf.Max(1f, _playerHealth.MaxHealth));
+                float hpNormalized = Mathf.Clamp01(_playerHealth.CurrentHealth / Mathf.Max(1f, _playerHealth.MaxHealth));
+                _playerHpFill.fillAmount = hpNormalized;
+                if (_playerHpFillRect != null)
+                {
+                    _playerHpFillRect.anchorMax = new Vector2(hpNormalized, 1f);
+                }
             }
 
             if (_playerHpText != null && _playerHealth != null)
             {
-                _playerHpText.text = string.Format(_statsFormat, _playerHealth.CurrentHealth, _playerHealth.MaxHealth);
+                string hpLine = string.Format(_statsFormat, _playerHealth.CurrentHealth, _playerHealth.MaxHealth);
+                int lives = _playerHealth.BonusLives;
+                if (lives > 0)
+                {
+                    hpLine += "  +" + lives + "L";
+                }
+
+                _playerHpText.text = hpLine;
             }
             else if (_playerHpText != null && _playerHealth == null)
             {
@@ -185,6 +216,8 @@ namespace StaticDrift.UI
                 _playerController.SetRotateRightHeld(_rotateRightHeld);
                 _playerController.SetAccelerateHeld(_accelerateHeld);
             }
+
+            UpdateTouchGameplayButtonsVisibility();
         }
 
         private void EnsureTouchControls()
@@ -207,6 +240,95 @@ namespace StaticDrift.UI
             if (accelerate == null)
             {
                 CreateControlButton("AccelerateButton", new Vector2(0.78f, 0f), new Vector2(1f, 0.88f), "A");
+            }
+
+            _touchGameplayButtonRoots.Clear();
+            CollectTouchGameplayButtonRoot("RotateLeftButton");
+            CollectTouchGameplayButtonRoot("RotateRightButton");
+            CollectTouchGameplayButtonRoot("AccelerateButton");
+        }
+
+        private void CollectTouchGameplayButtonRoot(string childName)
+        {
+            Transform t = transform.Find(childName);
+            if (t != null)
+            {
+                _touchGameplayButtonRoots.Add(t.gameObject);
+            }
+        }
+
+        private void UpdateTouchGameplayButtonsVisibility()
+        {
+            if (!_createTouchControls || _touchGameplayButtonRoots.Count == 0)
+            {
+                return;
+            }
+
+            Touchscreen ts = Touchscreen.current;
+            if (ts != null && ts.primaryTouch.press.wasPressedThisFrame)
+            {
+                SetTouchGameplayButtonsVisible(true);
+                return;
+            }
+
+            Mouse mouse = Mouse.current;
+            if (mouse != null && mouse.leftButton.wasPressedThisFrame)
+            {
+                SetTouchGameplayButtonsVisible(true);
+                return;
+            }
+
+            if (IsGamepadGameplayInputActive())
+            {
+                SetTouchGameplayButtonsVisible(false);
+                return;
+            }
+
+            if (IsKeyboardGameplayInputActive())
+            {
+                SetTouchGameplayButtonsVisible(false);
+            }
+        }
+
+        private static bool IsGamepadGameplayInputActive()
+        {
+            Gamepad gp = Gamepad.current;
+            if (gp == null)
+            {
+                return false;
+            }
+
+            return gp.leftShoulder.isPressed
+                || gp.rightShoulder.isPressed
+                || gp.buttonSouth.isPressed;
+        }
+
+        private static bool IsKeyboardGameplayInputActive()
+        {
+            Keyboard kb = Keyboard.current;
+            if (kb == null)
+            {
+                return false;
+            }
+
+            return kb.wKey.isPressed || kb.aKey.isPressed || kb.dKey.isPressed;
+        }
+
+        private void SetTouchGameplayButtonsVisible(bool visible)
+        {
+            if (_touchGameplayButtonsVisible == visible)
+            {
+                return;
+            }
+
+            _touchGameplayButtonsVisible = visible;
+            for (int i = 0; i < _touchGameplayButtonRoots.Count; i++)
+            {
+                GameObject go = _touchGameplayButtonRoots[i];
+                if (go != null)
+                {
+                    go.SetActive(visible);
+                }
             }
         }
 
@@ -394,9 +516,42 @@ namespace StaticDrift.UI
                 _buildText.fontStyle = FontStyles.Bold;
                 _buildText.color = new Color(0.86f, 0.83f, 1f, 0.98f);
                 GameFontLibrary.ApplyOutline(_buildText, 0.16f, new Color(0.05f, 0.05f, 0.09f, 0.9f));
-                _buildText.enableWordWrapping = true;
+                _buildText.textWrappingMode = TextWrappingModes.Normal;
                 _buildText.fontSize = 40f;
                 _buildText.lineSpacing = -8f;
+            }
+
+            if (_buildTagCountTexts != null)
+            {
+                for (int i = 0; i < _buildTagCountTexts.Length; i++)
+                {
+                    TMP_Text ct = _buildTagCountTexts[i];
+                    if (ct == null)
+                    {
+                        continue;
+                    }
+
+                    ct.fontStyle = FontStyles.Bold;
+                    ct.fontSize = UseMobileHudLayout() ? 30f : 26f;
+                    ct.color = new Color(0.88f, 0.9f, 1f, 0.95f);
+                    GameFontLibrary.ApplyOutline(ct, 0.14f, new Color(0.05f, 0.05f, 0.09f, 0.88f));
+                }
+            }
+
+            if (_buildSlotLetters != null)
+            {
+                for (int i = 0; i < _buildSlotLetters.Length; i++)
+                {
+                    TMP_Text lt = _buildSlotLetters[i];
+                    if (lt == null)
+                    {
+                        continue;
+                    }
+
+                    lt.fontStyle = FontStyles.Bold;
+                    lt.fontSize = Mathf.Max(22f, (UseMobileHudLayout() ? 52f : 44f) * 0.58f);
+                    GameFontLibrary.ApplyOutline(lt, 0.12f, new Color(0.05f, 0.05f, 0.09f, 0.88f));
+                }
             }
 
             if (_playerHpText != null)
@@ -423,6 +578,27 @@ namespace StaticDrift.UI
             GameFontLibrary.Apply(_buildText);
             GameFontLibrary.Apply(_bossHpText);
             GameFontLibrary.Apply(_playerHpText);
+            if (_buildTagCountTexts != null)
+            {
+                for (int i = 0; i < _buildTagCountTexts.Length; i++)
+                {
+                    if (_buildTagCountTexts[i] != null)
+                    {
+                        GameFontLibrary.Apply(_buildTagCountTexts[i]);
+                    }
+                }
+            }
+
+            if (_buildSlotLetters != null)
+            {
+                for (int i = 0; i < _buildSlotLetters.Length; i++)
+                {
+                    if (_buildSlotLetters[i] != null)
+                    {
+                        GameFontLibrary.Apply(_buildSlotLetters[i]);
+                    }
+                }
+            }
         }
 
         private void EnsureInfoLabels()
@@ -433,12 +609,222 @@ namespace StaticDrift.UI
             }
             if (_waveText == null)
             {
-                _waveText = CreateInfoLabel("WaveText", new Vector2(0.965f, 0.955f), TextAlignmentOptions.Right, "WAVE 1", new Vector2(400f, 86f));
+                _waveText = CreateInfoLabel("WaveText", new Vector2(0.5f, 0.955f), TextAlignmentOptions.Center, "WAVE 1", new Vector2(400f, 86f));
             }
             if (_buildText == null)
             {
-                _buildText = CreateInfoLabel("BuildText", new Vector2(0.965f, 0.90f), TextAlignmentOptions.Right, "BUILD V0 K0 T0 S0", new Vector2(760f, 132f));
+                _buildText = CreateInfoLabel("BuildText", new Vector2(0.965f, 0.90f), TextAlignmentOptions.Right, "BUILD", new Vector2(760f, 132f));
             }
+        }
+
+        private void EnsureTimerWaveCluster()
+        {
+            if (_timerText == null)
+            {
+                return;
+            }
+
+            const string clusterName = "TimerWaveCluster";
+            Transform clusterTf = transform.Find(clusterName);
+            RectTransform clusterRt;
+            if (clusterTf == null)
+            {
+                GameObject clusterGo = new GameObject(clusterName, typeof(RectTransform));
+                clusterTf = clusterGo.transform;
+                clusterTf.SetParent(transform, false);
+                clusterRt = clusterGo.GetComponent<RectTransform>();
+                clusterRt.anchorMin = new Vector2(0.5f, 1f);
+                clusterRt.anchorMax = new Vector2(0.5f, 1f);
+                clusterRt.pivot = new Vector2(0.5f, 1f);
+                clusterRt.anchoredPosition = new Vector2(0f, -14f);
+                clusterRt.sizeDelta = new Vector2(440f, 108f);
+            }
+            else
+            {
+                clusterRt = clusterTf.GetComponent<RectTransform>();
+            }
+
+            _timerText.transform.SetParent(clusterRt, false);
+            RectTransform timerRt = _timerText.rectTransform;
+            timerRt.anchorMin = new Vector2(0.5f, 1f);
+            timerRt.anchorMax = new Vector2(0.5f, 1f);
+            timerRt.pivot = new Vector2(0.5f, 1f);
+            timerRt.anchoredPosition = Vector2.zero;
+            timerRt.sizeDelta = new Vector2(400f, 58f);
+
+            if (_waveText != null)
+            {
+                _waveText.transform.SetParent(clusterRt, false);
+                RectTransform waveRt = _waveText.rectTransform;
+                waveRt.anchorMin = new Vector2(0.5f, 1f);
+                waveRt.anchorMax = new Vector2(0.5f, 1f);
+                waveRt.pivot = new Vector2(0.5f, 1f);
+                waveRt.anchoredPosition = new Vector2(0f, -56f);
+                waveRt.sizeDelta = new Vector2(420f, 46f);
+            }
+        }
+
+        private static bool UseMobileHudLayout()
+        {
+            int shortSide = Mathf.Min(Screen.width, Screen.height);
+            return Application.isMobilePlatform || shortSide <= 1080;
+        }
+
+        /// <summary>
+        /// Horizontal offset (px) to inset the build row from the screen edge so it does not sit under the top-right pause button (margin + button width + gap).
+        /// </summary>
+        private static float GetBuildHudPauseHorizontalClearancePx()
+        {
+            return UseMobileHudLayout() ? 152f : 136f;
+        }
+
+        private static string GetHudLoadoutLetter(CardTag tag)
+        {
+            switch (tag)
+            {
+                case CardTag.Volt:
+                    return "V";
+                case CardTag.Kinetic:
+                    return "K";
+                case CardTag.Thermal:
+                    return "T";
+                case CardTag.Static:
+                    return "S";
+                case CardTag.Repair:
+                    return "R";
+                case CardTag.Reach:
+                    return "E";
+                case CardTag.Volley:
+                    return "C";
+                case CardTag.Vitality:
+                    return "L";
+                default:
+                    return "?";
+            }
+        }
+
+        private void EnsureBuildUpgradeRow()
+        {
+            if (_buildTagCountTexts != null && _buildTagCountTexts.Length == 4 && _buildSlotDiamonds != null && _buildSlotLetters != null)
+            {
+                return;
+            }
+
+            if (_buildText == null)
+            {
+                return;
+            }
+
+            Transform existingRow = transform.Find("BuildHudRow");
+            if (existingRow != null)
+            {
+                Destroy(existingRow.gameObject);
+            }
+
+            GameObject rowGo = new GameObject("BuildHudRow", typeof(RectTransform));
+            rowGo.transform.SetParent(transform, false);
+            RectTransform rowRect = rowGo.GetComponent<RectTransform>();
+            rowRect.anchorMin = new Vector2(0.965f, 0.90f);
+            rowRect.anchorMax = new Vector2(0.965f, 0.90f);
+            rowRect.pivot = new Vector2(1f, 0.5f);
+            rowRect.sizeDelta = new Vector2(920f, 140f);
+            Vector2 buildHome = _buildText.rectTransform.anchoredPosition;
+            rowRect.anchoredPosition = new Vector2(buildHome.x - GetBuildHudPauseHorizontalClearancePx(), buildHome.y);
+
+            HorizontalLayoutGroup hlg = rowGo.AddComponent<HorizontalLayoutGroup>();
+            hlg.childAlignment = TextAnchor.MiddleRight;
+            hlg.spacing = 10f;
+            hlg.childForceExpandWidth = false;
+            hlg.childForceExpandHeight = false;
+
+            _buildText.transform.SetParent(rowGo.transform, false);
+            LayoutElement buildLe = _buildText.gameObject.GetComponent<LayoutElement>();
+            if (buildLe == null)
+            {
+                buildLe = _buildText.gameObject.AddComponent<LayoutElement>();
+            }
+
+            buildLe.preferredWidth = 118f;
+            buildLe.minWidth = 96f;
+            buildLe.flexibleWidth = 0f;
+
+            RectTransform brt = _buildText.rectTransform;
+            brt.anchorMin = new Vector2(0f, 0.5f);
+            brt.anchorMax = new Vector2(0f, 0.5f);
+            brt.pivot = new Vector2(0f, 0.5f);
+            brt.anchoredPosition = Vector2.zero;
+            brt.sizeDelta = new Vector2(118f, 72f);
+
+            _buildTagCountTexts = new TMP_Text[4];
+            _buildSlotDiamonds = new Image[4];
+            _buildSlotLetters = new TMP_Text[4];
+            float iconSize = UseMobileHudLayout() ? 52f : 44f;
+
+            for (int i = 0; i < 4; i++)
+            {
+                CreateBuildTagSlot(rowGo.transform, i, iconSize, out _buildSlotDiamonds[i], out _buildSlotLetters[i], out _buildTagCountTexts[i]);
+            }
+        }
+
+        private void CreateBuildTagSlot(Transform parent, int slotIndex, float iconSize, out Image diamondImage, out TMP_Text letterTmp, out TMP_Text countText)
+        {
+            GameObject slot = new GameObject("LoadoutSlot_" + slotIndex, typeof(RectTransform));
+            slot.transform.SetParent(parent, false);
+            VerticalLayoutGroup vlg = slot.AddComponent<VerticalLayoutGroup>();
+            vlg.childAlignment = TextAnchor.MiddleCenter;
+            vlg.spacing = 2;
+            vlg.childForceExpandHeight = false;
+            vlg.childForceExpandWidth = false;
+
+            LayoutElement slotLe = slot.AddComponent<LayoutElement>();
+            slotLe.preferredWidth = iconSize + 22f;
+            slotLe.minWidth = iconSize + 6f;
+
+            GameObject iconGo = new GameObject("Icon", typeof(RectTransform));
+            iconGo.transform.SetParent(slot.transform, false);
+            RectTransform iconRt = iconGo.GetComponent<RectTransform>();
+            iconRt.sizeDelta = new Vector2(iconSize, iconSize);
+            LayoutElement iconLe = iconGo.AddComponent<LayoutElement>();
+            iconLe.preferredWidth = iconSize;
+            iconLe.preferredHeight = iconSize;
+            Image iconImage = iconGo.AddComponent<Image>();
+            iconImage.sprite = UpgradeHudVisuals.GetDiamondSprite();
+            iconImage.color = new Color(0.32f, 0.36f, 0.42f, 0.55f);
+            iconImage.preserveAspect = true;
+            iconImage.raycastTarget = false;
+            diamondImage = iconImage;
+
+            GameObject letterGo = new GameObject("Letter", typeof(RectTransform));
+            letterGo.transform.SetParent(iconGo.transform, false);
+            RectTransform letterRect = letterGo.GetComponent<RectTransform>();
+            letterRect.anchorMin = Vector2.zero;
+            letterRect.anchorMax = Vector2.one;
+            letterRect.offsetMin = Vector2.zero;
+            letterRect.offsetMax = Vector2.zero;
+            letterTmp = letterGo.AddComponent<TextMeshProUGUI>();
+            GameFontLibrary.Apply(letterTmp);
+            letterTmp.fontSize = Mathf.Max(22f, iconSize * 0.58f);
+            letterTmp.fontStyle = FontStyles.Bold;
+            letterTmp.text = "?";
+            letterTmp.color = new Color(0.04f, 0.05f, 0.08f, 1f);
+            letterTmp.alignment = TextAlignmentOptions.Center;
+            letterTmp.raycastTarget = false;
+
+            GameObject countGo = new GameObject("Count", typeof(RectTransform));
+            countGo.transform.SetParent(slot.transform, false);
+            RectTransform countRt = countGo.GetComponent<RectTransform>();
+            countRt.sizeDelta = new Vector2(iconSize + 16f, 28f);
+            LayoutElement countLe = countGo.AddComponent<LayoutElement>();
+            countLe.preferredHeight = 30f;
+            TMP_Text countTmp = countGo.AddComponent<TextMeshProUGUI>();
+            GameFontLibrary.Apply(countTmp);
+            countTmp.text = "--";
+            countTmp.fontSize = UseMobileHudLayout() ? 30f : 26f;
+            countTmp.fontStyle = FontStyles.Bold;
+            countTmp.alignment = TextAlignmentOptions.Center;
+            countTmp.color = new Color(0.88f, 0.9f, 1f, 0.95f);
+            countTmp.raycastTarget = false;
+            countText = countTmp;
         }
 
         private void EnsureBossPanel()
@@ -515,6 +901,10 @@ namespace StaticDrift.UI
         {
             if (_playerHpPanel != null && _playerHpFill != null && _playerHpText != null)
             {
+                if (_playerHpFillRect == null)
+                {
+                    _playerHpFillRect = _playerHpFill.rectTransform;
+                }
                 return;
             }
 
@@ -522,11 +912,7 @@ namespace StaticDrift.UI
             if (existing != null)
             {
                 _playerHpPanel = existing.gameObject;
-                Transform fill = existing.Find("Fill");
-                if (fill != null)
-                {
-                    _playerHpFill = fill.GetComponent<Image>();
-                }
+                EnsurePlayerHpBarVisuals(existing);
 
                 Transform label = existing.Find("Label");
                 if (label != null)
@@ -546,21 +932,36 @@ namespace StaticDrift.UI
             rect.sizeDelta = new Vector2(420f, 50f);
 
             Image bg = panel.AddComponent<Image>();
-            bg.color = new Color(0.08f, 0.12f, 0.18f, 0.92f);
+            bg.color = new Color(0.04f, 0.07f, 0.12f, 0.98f);
+            Outline outline = panel.AddComponent<Outline>();
+            outline.effectColor = new Color(0.7f, 0.9f, 1f, 0.9f);
+            outline.effectDistance = new Vector2(2f, -2f);
+            outline.useGraphicAlpha = false;
+
+            GameObject trackGo = new GameObject("Track");
+            trackGo.transform.SetParent(panel.transform, false);
+            RectTransform trackRect = trackGo.AddComponent<RectTransform>();
+            trackRect.anchorMin = Vector2.zero;
+            trackRect.anchorMax = Vector2.one;
+            trackRect.offsetMin = new Vector2(4f, 4f);
+            trackRect.offsetMax = new Vector2(-4f, -4f);
+            Image trackImage = trackGo.AddComponent<Image>();
+            trackImage.color = new Color(0.09f, 0.15f, 0.22f, 1f);
+            trackImage.raycastTarget = false;
 
             GameObject fillGo = new GameObject("Fill");
-            fillGo.transform.SetParent(panel.transform, false);
+            fillGo.transform.SetParent(trackGo.transform, false);
             RectTransform fillRect = fillGo.AddComponent<RectTransform>();
             fillRect.anchorMin = Vector2.zero;
             fillRect.anchorMax = Vector2.one;
-            fillRect.offsetMin = new Vector2(4f, 4f);
-            fillRect.offsetMax = new Vector2(-4f, -4f);
+            fillRect.offsetMin = Vector2.zero;
+            fillRect.offsetMax = Vector2.zero;
+            fillRect.pivot = new Vector2(0f, 0.5f);
             Image fillImage = fillGo.AddComponent<Image>();
-            fillImage.type = Image.Type.Filled;
-            fillImage.fillMethod = Image.FillMethod.Horizontal;
-            fillImage.fillOrigin = 0;
+            fillImage.type = Image.Type.Simple;
             fillImage.fillAmount = 1f;
             fillImage.color = new Color(0.2f, 0.78f, 0.42f, 0.95f);
+            fillImage.raycastTarget = false;
 
             GameObject labelGo = new GameObject("Label");
             labelGo.transform.SetParent(panel.transform, false);
@@ -580,13 +981,43 @@ namespace StaticDrift.UI
 
             _playerHpPanel = panel;
             _playerHpFill = fillImage;
+            _playerHpFillRect = fillRect;
             _playerHpText = labelText;
+        }
+
+        private void ApplyPauseButtonLayout(RectTransform rect)
+        {
+            if (rect == null)
+            {
+                return;
+            }
+
+            rect.anchorMin = new Vector2(1f, 1f);
+            rect.anchorMax = new Vector2(1f, 1f);
+            rect.pivot = new Vector2(1f, 1f);
+            float pauseInsetX = UseMobileHudLayout() ? -40f : -36f;
+            float pauseInsetY = UseMobileHudLayout() ? -178f : -158f;
+            rect.anchoredPosition = new Vector2(pauseInsetX, pauseInsetY);
+            rect.sizeDelta = new Vector2(86f, 86f);
+        }
+
+        /// <summary>
+        /// Hides the HUD pause control (e.g. while the pause Help overlay is open) so it cannot be focused via gamepad/keyboard.
+        /// </summary>
+        public void SetPauseButtonHidden(bool hidden)
+        {
+            EnsurePauseButton();
+            if (_pauseButton != null)
+            {
+                _pauseButton.gameObject.SetActive(!hidden);
+            }
         }
 
         private void EnsurePauseButton()
         {
             if (_pauseButton != null)
             {
+                ApplyPauseButtonLayout(_pauseButton.GetComponent<RectTransform>());
                 return;
             }
 
@@ -594,17 +1025,14 @@ namespace StaticDrift.UI
             if (existing != null)
             {
                 _pauseButton = existing.GetComponent<Button>();
+                ApplyPauseButtonLayout(existing.GetComponent<RectTransform>());
                 return;
             }
 
             GameObject buttonGo = new GameObject("PauseButton");
             buttonGo.transform.SetParent(transform, false);
             RectTransform rect = buttonGo.AddComponent<RectTransform>();
-            rect.anchorMin = new Vector2(1f, 1f);
-            rect.anchorMax = new Vector2(1f, 1f);
-            rect.pivot = new Vector2(1f, 1f);
-            rect.anchoredPosition = new Vector2(-32f, -128f);
-            rect.sizeDelta = new Vector2(86f, 86f);
+            ApplyPauseButtonLayout(rect);
 
             Image image = buttonGo.AddComponent<Image>();
             Button button = buttonGo.AddComponent<Button>();
@@ -646,7 +1074,17 @@ namespace StaticDrift.UI
             RectTransform rect = go.AddComponent<RectTransform>();
             rect.anchorMin = anchor;
             rect.anchorMax = anchor;
-            rect.pivot = new Vector2(anchor.x < 0.5f ? 0f : 1f, 0.5f);
+            float pivotX = 0.5f;
+            if (anchor.x < 0.33f)
+            {
+                pivotX = 0f;
+            }
+            else if (anchor.x > 0.67f)
+            {
+                pivotX = 1f;
+            }
+
+            rect.pivot = new Vector2(pivotX, 0.5f);
             rect.sizeDelta = size;
             TMP_Text text = go.AddComponent<TextMeshProUGUI>();
             text.text = startText;
@@ -742,16 +1180,279 @@ namespace StaticDrift.UI
                     }
                 }
             }
+
+            if (_playerHpPanel == null)
+            {
+                Transform playerHp = transform.Find("PlayerHpPanel");
+                if (playerHp != null)
+                {
+                    _playerHpPanel = playerHp.gameObject;
+                    EnsurePlayerHpBarVisuals(playerHp);
+                    Transform labelTransform = playerHp.Find("Label");
+                    if (labelTransform != null)
+                    {
+                        _playerHpText = labelTransform.GetComponent<TMP_Text>();
+                    }
+                }
+            }
         }
 
         private TMP_Text FindTextByName(string name)
         {
-            Transform t = transform.Find(name);
+            Transform t = FindDeepChild(transform, name);
             if (t == null)
             {
                 return null;
             }
+
             return t.GetComponent<TMP_Text>();
+        }
+
+        private static Transform FindDeepChild(Transform parent, string childName)
+        {
+            for (int i = 0; i < parent.childCount; i++)
+            {
+                Transform c = parent.GetChild(i);
+                if (c.name == childName)
+                {
+                    return c;
+                }
+
+                Transform nested = FindDeepChild(c, childName);
+                if (nested != null)
+                {
+                    return nested;
+                }
+            }
+
+            return null;
+        }
+
+        private void TryBindPlayerReferences()
+        {
+            GameObject playerGo = GameObject.FindGameObjectWithTag(PlayerTag);
+            if (playerGo == null)
+            {
+                return;
+            }
+
+            if (_playerHealth == null)
+            {
+                _playerHealth = playerGo.GetComponent<PlayerHealth>();
+                if (_playerHealth == null)
+                {
+                    _playerHealth = playerGo.GetComponentInChildren<PlayerHealth>();
+                }
+            }
+
+            if (_playerController == null)
+            {
+                _playerController = playerGo.GetComponent<PlayerController>();
+                if (_playerController == null)
+                {
+                    _playerController = playerGo.GetComponentInChildren<PlayerController>();
+                }
+            }
+        }
+
+        private void EnsurePlayerHpBarVisuals(Transform panelTransform)
+        {
+            if (panelTransform == null)
+            {
+                return;
+            }
+
+            Image panelImage = panelTransform.GetComponent<Image>();
+            if (panelImage == null)
+            {
+                panelImage = panelTransform.gameObject.AddComponent<Image>();
+            }
+            panelImage.color = new Color(0.04f, 0.07f, 0.12f, 0.98f);
+            panelImage.raycastTarget = false;
+
+            Outline outline = panelTransform.GetComponent<Outline>();
+            if (outline == null)
+            {
+                outline = panelTransform.gameObject.AddComponent<Outline>();
+            }
+            outline.effectColor = new Color(0.7f, 0.9f, 1f, 0.9f);
+            outline.effectDistance = new Vector2(2f, -2f);
+            outline.useGraphicAlpha = false;
+
+            Transform track = panelTransform.Find("Track");
+            if (track == null)
+            {
+                track = panelTransform.Find("Fill");
+                if (track != null)
+                {
+                    track.name = "Track";
+                }
+            }
+
+            if (track == null)
+            {
+                GameObject trackGo = new GameObject("Track");
+                trackGo.transform.SetParent(panelTransform, false);
+                track = trackGo.transform;
+            }
+
+            RectTransform trackRect = track as RectTransform;
+            if (trackRect == null)
+            {
+                trackRect = track.gameObject.AddComponent<RectTransform>();
+            }
+            trackRect.anchorMin = Vector2.zero;
+            trackRect.anchorMax = Vector2.one;
+            trackRect.offsetMin = new Vector2(4f, 4f);
+            trackRect.offsetMax = new Vector2(-4f, -4f);
+            trackRect.pivot = new Vector2(0.5f, 0.5f);
+
+            Image trackImage = track.GetComponent<Image>();
+            if (trackImage == null)
+            {
+                trackImage = track.gameObject.AddComponent<Image>();
+            }
+            trackImage.type = Image.Type.Simple;
+            trackImage.color = new Color(0.09f, 0.15f, 0.22f, 1f);
+            trackImage.raycastTarget = false;
+
+            Transform fill = track.Find("Fill");
+            if (fill == null)
+            {
+                GameObject fillGo = new GameObject("Fill");
+                fillGo.transform.SetParent(track, false);
+                fill = fillGo.transform;
+            }
+
+            RectTransform fillRect = fill as RectTransform;
+            if (fillRect == null)
+            {
+                fillRect = fill.gameObject.AddComponent<RectTransform>();
+            }
+            fillRect.anchorMin = Vector2.zero;
+            fillRect.anchorMax = Vector2.one;
+            fillRect.offsetMin = Vector2.zero;
+            fillRect.offsetMax = Vector2.zero;
+            fillRect.pivot = new Vector2(0f, 0.5f);
+
+            Image fillImage = fill.GetComponent<Image>();
+            if (fillImage == null)
+            {
+                fillImage = fill.gameObject.AddComponent<Image>();
+            }
+            fillImage.type = Image.Type.Simple;
+            fillImage.fillAmount = 1f;
+            fillImage.color = new Color(0.2f, 0.78f, 0.42f, 0.95f);
+            fillImage.raycastTarget = false;
+
+            _playerHpFill = fillImage;
+            _playerHpFillRect = fillRect;
+        }
+    }
+
+    /// <summary>
+    /// Shared diamond sprite and tag colors for upgrade icons (pause help, gameplay HUD).
+    /// </summary>
+    public static class UpgradeHudVisuals
+    {
+        private static Sprite _upgradeDiamondSprite;
+
+        public static Sprite GetDiamondSprite()
+        {
+            if (_upgradeDiamondSprite != null)
+            {
+                return _upgradeDiamondSprite;
+            }
+
+            const int size = 64;
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            tex.wrapMode = TextureWrapMode.Clamp;
+
+            Vector2 center = new Vector2((size - 1) * 0.5f, (size - 1) * 0.5f);
+            float outer = 26f;
+            float inner = 10f;
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float dx = Mathf.Abs(x - center.x);
+                    float dy = Mathf.Abs(y - center.y);
+                    float diamond = dx + dy;
+                    float alpha = 0f;
+                    if (diamond <= outer && diamond >= inner)
+                    {
+                        alpha = 1f;
+                    }
+                    else if (diamond < inner)
+                    {
+                        alpha = 1f;
+                    }
+
+                    tex.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
+                }
+            }
+
+            tex.Apply();
+            _upgradeDiamondSprite = Sprite.Create(tex, new Rect(0f, 0f, size, size), new Vector2(0.5f, 0.5f), 100f);
+            return _upgradeDiamondSprite;
+        }
+
+        public static Color GetTagColor(CardTag tag)
+        {
+            switch (tag)
+            {
+                case CardTag.Volt:
+                    return new Color(0.42f, 0.86f, 1f, 0.98f);
+                case CardTag.Kinetic:
+                    return new Color(1f, 0.82f, 0.28f, 0.98f);
+                case CardTag.Thermal:
+                    return new Color(1f, 0.5f, 0.28f, 0.98f);
+                case CardTag.Static:
+                    return new Color(0.73f, 0.48f, 1f, 0.98f);
+                case CardTag.Repair:
+                    return new Color(0.38f, 0.95f, 0.62f, 0.98f);
+                case CardTag.Reach:
+                    return new Color(0.55f, 0.82f, 1f, 0.98f);
+                case CardTag.Volley:
+                    return new Color(1f, 0.55f, 0.78f, 0.98f);
+                case CardTag.Vitality:
+                    return new Color(1f, 0.42f, 0.42f, 0.98f);
+                default:
+                    return new Color(0.86f, 0.9f, 1f, 0.98f);
+            }
+        }
+
+        public static Color GetUpgradeColor(RunUpgradeController.UpgradeId id)
+        {
+            switch (id)
+            {
+                case RunUpgradeController.UpgradeId.VoltOverclock:
+                case RunUpgradeController.UpgradeId.VoltChainCharge:
+                    return GetTagColor(CardTag.Volt);
+                case RunUpgradeController.UpgradeId.KineticPayload:
+                case RunUpgradeController.UpgradeId.KineticSlinger:
+                    return GetTagColor(CardTag.Kinetic);
+                case RunUpgradeController.UpgradeId.ThermalFlux:
+                case RunUpgradeController.UpgradeId.ThermalCore:
+                    return GetTagColor(CardTag.Thermal);
+                case RunUpgradeController.UpgradeId.StaticPlating:
+                case RunUpgradeController.UpgradeId.StaticField:
+                    return GetTagColor(CardTag.Static);
+                case RunUpgradeController.UpgradeId.RepairNanites:
+                case RunUpgradeController.UpgradeId.RepairWeave:
+                    return GetTagColor(CardTag.Repair);
+                case RunUpgradeController.UpgradeId.ReachExtender:
+                case RunUpgradeController.UpgradeId.ReachCalibrator:
+                    return GetTagColor(CardTag.Reach);
+                case RunUpgradeController.UpgradeId.VolleySpread:
+                    return GetTagColor(CardTag.Volley);
+                case RunUpgradeController.UpgradeId.BackupCell:
+                case RunUpgradeController.UpgradeId.ReserveHarness:
+                    return GetTagColor(CardTag.Vitality);
+                default:
+                    return new Color(0.86f, 0.9f, 1f, 0.98f);
+            }
         }
     }
 }

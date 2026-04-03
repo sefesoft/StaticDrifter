@@ -125,13 +125,13 @@ namespace StaticDrift.Enemies
             }
 
             _spawnTimer = 0f;
-            Vector3 spawnPosition = GetOffCameraSpawnPosition(_spawnEdgeMargin);
-            if (ShouldSpawnDroneThisTick() && SpawnDrone(spawnPosition))
+            Vector3 droneSpawnPosition = GetOffCameraSpawnPosition(_spawnEdgeMargin);
+            if (ShouldSpawnDroneThisTick() && SpawnDrone(droneSpawnPosition))
             {
                 return;
             }
 
-            SpawnRandomAsteroid(spawnPosition, default(Vector2), false);
+            SpawnRandomAsteroid(default(Vector2), false);
         }
 
         public void SetSpawningEnabled(bool enabled)
@@ -221,7 +221,7 @@ namespace StaticDrift.Enemies
             }
         }
 
-        private void SpawnRandomAsteroid(Vector3 spawnPosition, Vector2 parentVelocity, bool fromSplit)
+        private void SpawnRandomAsteroid(Vector2 parentVelocity, bool fromSplit)
         {
             Asteroid.AsteroidSize size = ChooseRandomSize();
             float healthMultiplier = 1f;
@@ -230,6 +230,7 @@ namespace StaticDrift.Enemies
                 healthMultiplier = _eliteHealthMultiplier;
             }
 
+            Vector2 spawnPosition = GetOffCameraSpawnPosition(GetSpawnMarginForSize(size));
             SpawnAsteroid(size, spawnPosition, parentVelocity, fromSplit, healthMultiplier);
         }
 
@@ -478,6 +479,13 @@ namespace StaticDrift.Enemies
             Vector3 origin = cam.transform.position;
             origin.z = 0f;
             return origin + new Vector3(d.x * radius, d.y * radius, 0f);
+        }
+
+        private float GetSpawnMarginForSize(Asteroid.AsteroidSize size)
+        {
+            Vector3 scale = GetScale(size);
+            float asteroidRadius = Mathf.Max(scale.x, scale.y) * 0.8f;
+            return _spawnEdgeMargin + asteroidRadius + _screenWrapMargin;
         }
 
         private Vector2 GetInwardDirectionFromSpawn(Vector2 spawnPosition)

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using StaticDrift.Cards;
 using StaticDrift.Player;
@@ -6,15 +7,13 @@ namespace StaticDrift.Managers
 {
     public class RunUpgradeController : MonoBehaviour
     {
-        [Header("Upgrade Limits (Per Tag)")]
-        [SerializeField] private int _maxVoltPicks = 3;
-        [SerializeField] private int _maxKineticPicks = 3;
-        [SerializeField] private int _maxThermalPicks = 3;
-        [SerializeField] private int _maxStaticPicks = 3;
+        public const int LoadoutSlotCount = 4;
 
-        [Header("Upgrade Limits (Per Upgrade)")]
         [SerializeField] private int _maxStacksPerUpgrade = 3;
         [SerializeField] private float _startingFireIntervalMultiplier = 1.15f;
+        [Tooltip("Base projectile lifetime multiplier (lower = shorter shots before upgrades).")]
+        [SerializeField] private float _startingProjectileLifetimeMultiplier = 0.36f;
+        [SerializeField] private int _maxBonusLivesFromUpgrades = 4;
 
         public enum UpgradeId
         {
@@ -25,7 +24,14 @@ namespace StaticDrift.Managers
             ThermalFlux,
             ThermalCore,
             StaticPlating,
-            StaticField
+            StaticField,
+            RepairNanites,
+            RepairWeave,
+            ReachExtender,
+            ReachCalibrator,
+            VolleySpread,
+            BackupCell,
+            ReserveHarness
         }
 
         public struct UpgradeOption
@@ -43,56 +49,105 @@ namespace StaticDrift.Managers
                 Id = UpgradeId.VoltOverclock,
                 Tag = CardTag.Volt,
                 Title = "Volt Overclock",
-                Description = "-12% fire interval."
+                Description = "-8% fire interval."
             },
             new UpgradeOption
             {
                 Id = UpgradeId.VoltChainCharge,
                 Tag = CardTag.Volt,
                 Title = "Volt Accelerator",
-                Description = "+20% projectile speed."
+                Description = "+12% projectile speed."
             },
             new UpgradeOption
             {
                 Id = UpgradeId.KineticPayload,
                 Tag = CardTag.Kinetic,
                 Title = "Kinetic Payload",
-                Description = "+20% projectile damage."
+                Description = "+12% projectile damage."
             },
             new UpgradeOption
             {
                 Id = UpgradeId.KineticSlinger,
                 Tag = CardTag.Kinetic,
                 Title = "Kinetic Slinger",
-                Description = "+15% projectile speed."
+                Description = "+10% projectile speed, +4% damage."
             },
             new UpgradeOption
             {
                 Id = UpgradeId.ThermalFlux,
                 Tag = CardTag.Thermal,
                 Title = "Thermal Shrapnel",
-                Description = "+0.45 splash radius, enables AOE."
+                Description = "+0.30 splash radius, enables AOE."
             },
             new UpgradeOption
             {
                 Id = UpgradeId.ThermalCore,
                 Tag = CardTag.Thermal,
                 Title = "Thermal Reactor",
-                Description = "+15% damage, +0.60 splash, +10% splash damage."
+                Description = "+8% damage, +0.38 splash, +6% splash damage."
             },
             new UpgradeOption
             {
                 Id = UpgradeId.StaticPlating,
                 Tag = CardTag.Static,
                 Title = "Static Plating",
-                Description = "-12% incoming damage."
+                Description = "-8% incoming damage."
             },
             new UpgradeOption
             {
                 Id = UpgradeId.StaticField,
                 Tag = CardTag.Static,
                 Title = "Static Field",
-                Description = "Heal 20 HP, -5% fire interval, -6% incoming damage."
+                Description = "Heal 12 HP, -3% fire interval, -4% incoming damage."
+            },
+            new UpgradeOption
+            {
+                Id = UpgradeId.RepairNanites,
+                Tag = CardTag.Repair,
+                Title = "Nanite Swarm",
+                Description = "+0.09 HP/sec regeneration."
+            },
+            new UpgradeOption
+            {
+                Id = UpgradeId.RepairWeave,
+                Tag = CardTag.Repair,
+                Title = "Biosuture Weave",
+                Description = "+0.07 HP/sec regeneration."
+            },
+            new UpgradeOption
+            {
+                Id = UpgradeId.ReachExtender,
+                Tag = CardTag.Reach,
+                Title = "Coil Extender",
+                Description = "+9% projectile travel distance."
+            },
+            new UpgradeOption
+            {
+                Id = UpgradeId.ReachCalibrator,
+                Tag = CardTag.Reach,
+                Title = "Harmonic Lens",
+                Description = "+7% reach, +3% damage."
+            },
+            new UpgradeOption
+            {
+                Id = UpgradeId.VolleySpread,
+                Tag = CardTag.Volley,
+                Title = "Scatter Matrix",
+                Description = "+1 spread shot (up to 4 total, Contra-style fan)."
+            },
+            new UpgradeOption
+            {
+                Id = UpgradeId.BackupCell,
+                Tag = CardTag.Vitality,
+                Title = "Backup Cell",
+                Description = "+1 extra life; on lethal hit revive at 50% HP."
+            },
+            new UpgradeOption
+            {
+                Id = UpgradeId.ReserveHarness,
+                Tag = CardTag.Vitality,
+                Title = "Reserve Harness",
+                Description = "+1 extra life, heal 15 HP now; revives at 50% HP."
             }
         };
 
@@ -104,13 +159,13 @@ namespace StaticDrift.Managers
         public float ProjectileSplashRadius { get; private set; }
         public float ProjectileSplashDamageMultiplier { get; private set; } = 0.45f;
         public float IncomingDamageMultiplier { get; private set; } = 1f;
+        public float ProjectileLifetimeMultiplier { get; private set; } = 1f;
+        public float HealthRegenPerSecond { get; private set; }
+        public int VolleyPelletCount { get; private set; } = 1;
 
-        private int _voltPicks;
-        private int _kineticPicks;
-        private int _thermalPicks;
-        private int _staticPicks;
-        private int _totalPicks;
+        private readonly List<CardTag> _loadoutTags = new List<CardTag>(LoadoutSlotCount);
         private int[] _stackCounts;
+        private int _bonusLivesFromUpgrades;
 
         private void Awake()
         {
@@ -140,11 +195,11 @@ namespace StaticDrift.Managers
             ProjectileSplashRadius = 0f;
             ProjectileSplashDamageMultiplier = 0.45f;
             IncomingDamageMultiplier = 1f;
-            _voltPicks = 0;
-            _kineticPicks = 0;
-            _thermalPicks = 0;
-            _staticPicks = 0;
-            _totalPicks = 0;
+            ProjectileLifetimeMultiplier = Mathf.Clamp(_startingProjectileLifetimeMultiplier, 0.22f, 1.1f);
+            HealthRegenPerSecond = 0f;
+            VolleyPelletCount = 1;
+            _bonusLivesFromUpgrades = 0;
+            _loadoutTags.Clear();
             if (_stackCounts == null || _stackCounts.Length != _allOptions.Length)
             {
                 _stackCounts = new int[_allOptions.Length];
@@ -156,6 +211,60 @@ namespace StaticDrift.Managers
                     _stackCounts[i] = 0;
                 }
             }
+        }
+
+        public IReadOnlyList<CardTag> LoadoutTags => _loadoutTags;
+        public bool IsLoadoutFull => _loadoutTags.Count >= LoadoutSlotCount;
+
+        public CardTag GetLoadoutSlotTag(int slotIndex)
+        {
+            if (slotIndex < 0 || slotIndex >= LoadoutSlotCount)
+            {
+                return CardTag.None;
+            }
+
+            return slotIndex < _loadoutTags.Count ? _loadoutTags[slotIndex] : CardTag.None;
+        }
+
+        public string GetLoadoutSlotStacksText(int slotIndex)
+        {
+            CardTag tag = GetLoadoutSlotTag(slotIndex);
+            if (tag == CardTag.None)
+            {
+                return "--";
+            }
+
+            return GetTotalStacksForTag(tag) + "/" + GetMaxPossibleStacksForTag(tag);
+        }
+
+        public int GetTotalStacksForTag(CardTag tag)
+        {
+            int sum = 0;
+            int n = _allOptions.Length;
+            for (int i = 0; i < n; i++)
+            {
+                if (_allOptions[i].Tag == tag)
+                {
+                    sum += _stackCounts != null && i < _stackCounts.Length ? _stackCounts[i] : 0;
+                }
+            }
+
+            return sum;
+        }
+
+        public int GetMaxPossibleStacksForTag(CardTag tag)
+        {
+            int defs = 0;
+            int n = _allOptions.Length;
+            for (int i = 0; i < n; i++)
+            {
+                if (_allOptions[i].Tag == tag)
+                {
+                    defs++;
+                }
+            }
+
+            return defs * Mathf.Max(1, _maxStacksPerUpgrade);
         }
 
         public UpgradeOption[] BuildDraftOptions(int count)
@@ -173,7 +282,7 @@ namespace StaticDrift.Managers
             int selected = 0;
             int safety = 0;
 
-            while (selected < target && safety < 200)
+            while (selected < target && safety < 400)
             {
                 safety++;
                 int candidateIndex = candidateIndices[Random.Range(0, candidateCount)];
@@ -211,99 +320,224 @@ namespace StaticDrift.Managers
                 }
             }
 
-            CardTag tag = CardTag.None;
-
-            switch (id)
-            {
-                case UpgradeId.VoltOverclock:
-                    FireIntervalMultiplier *= 0.88f;
-                    tag = CardTag.Volt;
-                    break;
-                case UpgradeId.VoltChainCharge:
-                    ProjectileSpeedMultiplier *= 1.20f;
-                    tag = CardTag.Volt;
-                    break;
-                case UpgradeId.KineticPayload:
-                    ProjectileDamageMultiplier *= 1.20f;
-                    tag = CardTag.Kinetic;
-                    break;
-                case UpgradeId.KineticSlinger:
-                    ProjectileSpeedMultiplier *= 1.15f;
-                    ProjectileDamageMultiplier *= 1.08f;
-                    tag = CardTag.Kinetic;
-                    break;
-                case UpgradeId.ThermalFlux:
-                    ProjectileSplashRadius += 0.45f;
-                    tag = CardTag.Thermal;
-                    break;
-                case UpgradeId.ThermalCore:
-                    ProjectileDamageMultiplier *= 1.15f;
-                    ProjectileSplashRadius += 0.60f;
-                    ProjectileSplashDamageMultiplier += 0.10f;
-                    tag = CardTag.Thermal;
-                    break;
-                case UpgradeId.StaticPlating:
-                    IncomingDamageMultiplier *= 0.88f;
-                    tag = CardTag.Static;
-                    break;
-                case UpgradeId.StaticField:
-                    IncomingDamageMultiplier *= 0.94f;
-                    FireIntervalMultiplier *= 0.95f;
-                    if (playerHealth != null)
-                    {
-                        playerHealth.Heal(20f);
-                    }
-                    tag = CardTag.Static;
-                    break;
-            }
-
-            if (tag != CardTag.None && !CanTakeTag(tag))
+            CardTag tag = GetTagForUpgradeId(id);
+            if (tag == CardTag.None)
             {
                 return false;
             }
 
-            _totalPicks++;
+            if (!CanTakeTagForNewPick(tag))
+            {
+                return false;
+            }
+
+            if (id == UpgradeId.BackupCell || id == UpgradeId.ReserveHarness)
+            {
+                if (playerHealth == null || _bonusLivesFromUpgrades >= _maxBonusLivesFromUpgrades)
+                {
+                    return false;
+                }
+            }
+
+            if (id == UpgradeId.VolleySpread && VolleyPelletCount >= 4)
+            {
+                return false;
+            }
+
+            switch (id)
+            {
+                case UpgradeId.VoltOverclock:
+                    FireIntervalMultiplier *= 0.92f;
+                    break;
+                case UpgradeId.VoltChainCharge:
+                    ProjectileSpeedMultiplier *= 1.12f;
+                    break;
+                case UpgradeId.KineticPayload:
+                    ProjectileDamageMultiplier *= 1.12f;
+                    break;
+                case UpgradeId.KineticSlinger:
+                    ProjectileSpeedMultiplier *= 1.10f;
+                    ProjectileDamageMultiplier *= 1.04f;
+                    break;
+                case UpgradeId.ThermalFlux:
+                    ProjectileSplashRadius += 0.30f;
+                    break;
+                case UpgradeId.ThermalCore:
+                    ProjectileDamageMultiplier *= 1.08f;
+                    ProjectileSplashRadius += 0.38f;
+                    ProjectileSplashDamageMultiplier += 0.06f;
+                    break;
+                case UpgradeId.StaticPlating:
+                    IncomingDamageMultiplier *= 0.92f;
+                    break;
+                case UpgradeId.StaticField:
+                    IncomingDamageMultiplier *= 0.96f;
+                    FireIntervalMultiplier *= 0.97f;
+                    if (playerHealth != null)
+                    {
+                        playerHealth.Heal(12f);
+                    }
+
+                    break;
+                case UpgradeId.RepairNanites:
+                    HealthRegenPerSecond += 0.09f;
+                    break;
+                case UpgradeId.RepairWeave:
+                    HealthRegenPerSecond += 0.07f;
+                    break;
+                case UpgradeId.ReachExtender:
+                    ProjectileLifetimeMultiplier += 0.09f;
+                    break;
+                case UpgradeId.ReachCalibrator:
+                    ProjectileLifetimeMultiplier += 0.07f;
+                    ProjectileDamageMultiplier *= 1.03f;
+                    break;
+                case UpgradeId.VolleySpread:
+                    VolleyPelletCount++;
+                    break;
+                case UpgradeId.BackupCell:
+                    TryGrantBonusLife(playerHealth);
+                    break;
+                case UpgradeId.ReserveHarness:
+                    TryGrantBonusLife(playerHealth);
+                    if (playerHealth != null)
+                    {
+                        playerHealth.Heal(15f);
+                    }
+
+                    break;
+                default:
+                    return false;
+            }
+
             if (_stackCounts != null && stackIndex >= 0 && stackIndex < _stackCounts.Length)
             {
                 _stackCounts[stackIndex]++;
             }
 
-            IncrementTagCount(tag);
-            FireIntervalMultiplier = Mathf.Clamp(FireIntervalMultiplier, 0.32f, 1.6f);
-            IncomingDamageMultiplier = Mathf.Clamp(IncomingDamageMultiplier, 0.40f, 1f);
-            ProjectileSplashDamageMultiplier = Mathf.Clamp(ProjectileSplashDamageMultiplier, 0.2f, 0.9f);
-            ProjectileDamageMultiplier = Mathf.Clamp(ProjectileDamageMultiplier, 0.8f, 3f);
-            ProjectileSpeedMultiplier = Mathf.Clamp(ProjectileSpeedMultiplier, 0.8f, 2.4f);
-            ProjectileSplashRadius = Mathf.Clamp(ProjectileSplashRadius, 0f, 2.6f);
+            RegisterLoadoutTag(tag);
+            FireIntervalMultiplier = Mathf.Clamp(FireIntervalMultiplier, 0.38f, 1.6f);
+            IncomingDamageMultiplier = Mathf.Clamp(IncomingDamageMultiplier, 0.52f, 1f);
+            ProjectileSplashDamageMultiplier = Mathf.Clamp(ProjectileSplashDamageMultiplier, 0.2f, 0.85f);
+            ProjectileDamageMultiplier = Mathf.Clamp(ProjectileDamageMultiplier, 0.8f, 2.35f);
+            ProjectileSpeedMultiplier = Mathf.Clamp(ProjectileSpeedMultiplier, 0.8f, 2.1f);
+            ProjectileSplashRadius = Mathf.Clamp(ProjectileSplashRadius, 0f, 2.2f);
+            ProjectileLifetimeMultiplier = Mathf.Clamp(ProjectileLifetimeMultiplier, 0.22f, 0.92f);
+            HealthRegenPerSecond = Mathf.Clamp(HealthRegenPerSecond, 0f, 1.05f);
             return true;
+        }
+
+        private void TryGrantBonusLife(PlayerHealth playerHealth)
+        {
+            if (playerHealth == null)
+            {
+                return;
+            }
+
+            if (_bonusLivesFromUpgrades >= _maxBonusLivesFromUpgrades)
+            {
+                return;
+            }
+
+            _bonusLivesFromUpgrades++;
+            playerHealth.AddBonusLife(1);
+        }
+
+        private static CardTag GetTagForUpgradeId(UpgradeId id)
+        {
+            int n = _allOptions.Length;
+            for (int i = 0; i < n; i++)
+            {
+                if (_allOptions[i].Id == id)
+                {
+                    return _allOptions[i].Tag;
+                }
+            }
+
+            return CardTag.None;
         }
 
         public string GetSynergySummary()
         {
-            // Show tag pick ranges (e.g. "V[0-3]") so players know each synergy cap.
-            return "V[" + _voltPicks + "-" + _maxVoltPicks + "] "
-                + "K[" + _kineticPicks + "-" + _maxKineticPicks + "] "
-                + "T[" + _thermalPicks + "-" + _maxThermalPicks + "] "
-                + "S[" + _staticPicks + "-" + _maxStaticPicks + "]";
+            char[] letters = { '?', '?', '?', '?' };
+            for (int i = 0; i < _loadoutTags.Count && i < LoadoutSlotCount; i++)
+            {
+                letters[i] = GetTagLetterChar(_loadoutTags[i]);
+            }
+
+            return letters[0] + "[" + GetSlotStacksOrDash(0) + "] "
+                + letters[1] + "[" + GetSlotStacksOrDash(1) + "] "
+                + letters[2] + "[" + GetSlotStacksOrDash(2) + "] "
+                + letters[3] + "[" + GetSlotStacksOrDash(3) + "]";
         }
 
-        private void IncrementTagCount(CardTag tag)
+        private string GetSlotStacksOrDash(int slotIndex)
+        {
+            CardTag tag = GetLoadoutSlotTag(slotIndex);
+            if (tag == CardTag.None)
+            {
+                return "-";
+            }
+
+            return GetTotalStacksForTag(tag).ToString();
+        }
+
+        private static char GetTagLetterChar(CardTag tag)
         {
             switch (tag)
             {
                 case CardTag.Volt:
-                    _voltPicks++;
-                    break;
+                    return 'V';
                 case CardTag.Kinetic:
-                    _kineticPicks++;
-                    break;
+                    return 'K';
                 case CardTag.Thermal:
-                    _thermalPicks++;
-                    break;
+                    return 'T';
                 case CardTag.Static:
-                    _staticPicks++;
-                    break;
+                    return 'S';
+                case CardTag.Repair:
+                    return 'R';
+                case CardTag.Reach:
+                    return 'E';
+                case CardTag.Volley:
+                    return 'C';
+                case CardTag.Vitality:
+                    return 'L';
+                default:
+                    return '?';
             }
+        }
+
+        private void RegisterLoadoutTag(CardTag tag)
+        {
+            if (tag == CardTag.None)
+            {
+                return;
+            }
+
+            if (_loadoutTags.Contains(tag))
+            {
+                return;
+            }
+
+            if (_loadoutTags.Count < LoadoutSlotCount)
+            {
+                _loadoutTags.Add(tag);
+            }
+        }
+
+        private bool CanTakeTagForNewPick(CardTag tag)
+        {
+            if (tag == CardTag.None)
+            {
+                return true;
+            }
+
+            if (_loadoutTags.Count >= LoadoutSlotCount)
+            {
+                return _loadoutTags.Contains(tag);
+            }
+
+            return true;
         }
 
         private int[] BuildCandidateIndexList()
@@ -317,8 +551,9 @@ namespace StaticDrift.Managers
             {
                 int stacks = _stackCounts != null && i < _stackCounts.Length ? _stackCounts[i] : 0;
                 bool canStack = stacks < limit;
-                bool canTag = CanTakeTag(_allOptions[i].Tag);
-                if (canStack && canTag)
+                CardTag tag = _allOptions[i].Tag;
+                bool tagAllowed = CanTakeTagForNewPick(tag);
+                if (canStack && tagAllowed)
                 {
                     temp[write] = i;
                     write++;
@@ -332,33 +567,6 @@ namespace StaticDrift.Managers
             }
 
             return result;
-        }
-
-        private bool CanTakeTag(CardTag tag)
-        {
-            if (tag == CardTag.None)
-            {
-                return true;
-            }
-
-            if (tag == CardTag.Volt)
-            {
-                return _voltPicks < Mathf.Max(0, _maxVoltPicks);
-            }
-            if (tag == CardTag.Kinetic)
-            {
-                return _kineticPicks < Mathf.Max(0, _maxKineticPicks);
-            }
-            if (tag == CardTag.Thermal)
-            {
-                return _thermalPicks < Mathf.Max(0, _maxThermalPicks);
-            }
-            if (tag == CardTag.Static)
-            {
-                return _staticPicks < Mathf.Max(0, _maxStaticPicks);
-            }
-
-            return false;
         }
     }
 }

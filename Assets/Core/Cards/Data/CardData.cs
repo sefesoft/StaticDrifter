@@ -8,7 +8,11 @@ namespace StaticDrift.Cards
         Volt = 1,
         Kinetic = 2,
         Thermal = 3,
-        Static = 4
+        Static = 4,
+        Repair = 5,
+        Reach = 6,
+        Volley = 7,
+        Vitality = 8
     }
 
     public enum CardRarity
