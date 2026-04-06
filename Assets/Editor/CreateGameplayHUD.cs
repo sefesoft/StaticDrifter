@@ -13,6 +13,7 @@ namespace StaticDrift.Editor
         private const string MenuPath = "Static Drift/Create Gameplay HUD in Scene";
         private const string AddToGameplayPath = "Static Drift/Add Gameplay HUD to Gameplay Scene";
         private const string GameplayScenePath = "Assets/Scenes/Gameplay.unity";
+        private const string GameplayHudPrefabPath = "Assets/Prefabs/Gameplay/GameplayHUD.prefab";
 
         [MenuItem(AddToGameplayPath)]
         public static void AddToGameplayScene()
@@ -62,14 +63,32 @@ namespace StaticDrift.Editor
             canvasGo.GetComponent<CanvasScaler>().matchWidthOrHeight = 0.5f;
             canvasGo.AddComponent<GraphicRaycaster>();
 
+            GameObject hudPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(GameplayHudPrefabPath);
+            if (hudPrefab != null)
+            {
+                GameObject hudInstance = (GameObject)PrefabUtility.InstantiatePrefab(hudPrefab, canvasGo.transform);
+                RectTransform hudRect = hudInstance.GetComponent<RectTransform>();
+                if (hudRect != null)
+                {
+                    hudRect.anchorMin = Vector2.zero;
+                    hudRect.anchorMax = Vector2.one;
+                    hudRect.offsetMin = Vector2.zero;
+                    hudRect.offsetMax = Vector2.zero;
+                }
+
+                Undo.RegisterCreatedObjectUndo(canvasGo, "Create Gameplay HUD");
+                Selection.activeGameObject = canvasGo;
+                return;
+            }
+
             GameObject hudGo = new GameObject("GameplayHUD");
             hudGo.transform.SetParent(canvasGo.transform, false);
 
-            RectTransform hudRect = hudGo.AddComponent<RectTransform>();
-            hudRect.anchorMin = Vector2.zero;
-            hudRect.anchorMax = Vector2.one;
-            hudRect.offsetMin = Vector2.zero;
-            hudRect.offsetMax = Vector2.zero;
+            RectTransform fallbackRect = hudGo.AddComponent<RectTransform>();
+            fallbackRect.anchorMin = Vector2.zero;
+            fallbackRect.anchorMax = Vector2.one;
+            fallbackRect.offsetMin = Vector2.zero;
+            fallbackRect.offsetMax = Vector2.zero;
 
             GameplayHUD gameplayHUD = hudGo.AddComponent<GameplayHUD>();
 

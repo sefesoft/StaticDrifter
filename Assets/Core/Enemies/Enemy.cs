@@ -11,6 +11,8 @@ namespace StaticDrift.Enemies
     [RequireComponent(typeof(Rigidbody2D))]
     public class Enemy : MonoBehaviour, IDamageable
     {
+        public static event System.Action HostileDestroyed;
+
         private EnemyData _data;
         private ObjectPooler _pooler;
         private Transform _playerTarget;
@@ -94,6 +96,8 @@ namespace StaticDrift.Enemies
 
         private void Die()
         {
+            HostileDestroyed?.Invoke();
+
             if (_pooler != null)
             {
                 _pooler.Despawn(gameObject);

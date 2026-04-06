@@ -8,6 +8,9 @@ namespace StaticDrift.Player
     /// </summary>
     public class PlayerHealth : MonoBehaviour
     {
+        /// <summary>Fires once per damage application that passes immunity checks (including hits absorbed by bonus lives).</summary>
+        public static event System.Action PlayerTookDamage;
+
         [SerializeField] private float _maxHealth = 100f;
         [SerializeField] private float _invulnerabilityDuration = 0.5f;
         [Tooltip("HP fraction when a bonus life is consumed (0.5 = half max HP).")]
@@ -73,6 +76,8 @@ namespace StaticDrift.Player
             {
                 return;
             }
+
+            PlayerTookDamage?.Invoke();
 
             _currentHealth -= amount;
             if (_currentHealth < 0f)

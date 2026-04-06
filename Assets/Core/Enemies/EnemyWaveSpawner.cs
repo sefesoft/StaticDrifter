@@ -81,6 +81,12 @@ namespace StaticDrift.Enemies
         public Camera ActiveCamera => _camera != null ? _camera : Camera.main;
         public bool IsEliteWave => _isEliteWave;
 
+        public bool IsEliteWaveNumber(int waveIndex)
+        {
+            int w = Mathf.Max(1, waveIndex);
+            return _eliteWaveEvery > 0 && (w % _eliteWaveEvery == 0);
+        }
+
         private void Awake()
         {
             if (_camera == null)
@@ -125,7 +131,8 @@ namespace StaticDrift.Enemies
             }
 
             _spawnTimer = 0f;
-            Vector3 droneSpawnPosition = GetOffCameraSpawnPosition(_spawnEdgeMargin);
+            Vector3 droneSpawnPosition = GetOffCameraSpawnPosition(
+                ClampSpawnOutwardPadding(_spawnEdgeMargin * 0.35f));
             if (ShouldSpawnDroneThisTick() && SpawnDrone(droneSpawnPosition))
             {
                 return;
@@ -230,7 +237,8 @@ namespace StaticDrift.Enemies
                 healthMultiplier = _eliteHealthMultiplier;
             }
 
-            Vector2 spawnPosition = GetOffCameraSpawnPosition(GetSpawnMarginForSize(size));
+            float outward = ClampSpawnOutwardPadding(GetOutwardSpawnPaddingForSize(size));
+            Vector2 spawnPosition = GetOffCameraSpawnPosition(outward);
             SpawnAsteroid(size, spawnPosition, parentVelocity, fromSplit, healthMultiplier);
         }
 
@@ -262,9 +270,30 @@ namespace StaticDrift.Enemies
                 return;
             }
 
-            Vector2 direction = fromSplit
-                ? (Random.insideUnitCircle + parentVelocity.normalized * 0.5f).normalized
-                : GetInwardDirectionFromSpawn(spawnPosition);
+            Vector2 direction;
+            if (fromSplit)
+            {
+                direction = (Random.insideUnitCircle + parentVelocity.normalized * 0.5f).normalized;
+            }
+            else
+            {
+                direction = GetInwardDirectionFromSpawn(spawnPosition);
+                if (direction.sqrMagnitude < 0.0001f)
+                {
+                    direction = Random.insideUnitCircle.normalized;
+                }
+                else
+                {
+                    direction = direction.normalized;
+                    float jitterRad = Random.Range(-24f, 24f) * Mathf.Deg2Rad;
+                    float cos = Mathf.Cos(jitterRad);
+                    float sin = Mathf.Sin(jitterRad);
+                    direction = new Vector2(
+                        direction.x * cos - direction.y * sin,
+                        direction.x * sin + direction.y * cos).normalized;
+                }
+            }
+
             if (direction.sqrMagnitude < 0.0001f)
             {
                 direction = Random.insideUnitCircle.normalized;
@@ -454,7 +483,12 @@ namespace StaticDrift.Enemies
             return _asteroidStats.SmallScale;
         }
 
-        private Vector3 GetOffCameraSpawnPosition(float margin)
+        /// <summary>
+        /// Orthographic: spawn along a random screen edge, just outside the visible rect but still inside the
+        /// wrap threshold (see Asteroid.WrapAtScreenEdges). The old circular spawn used a radius past that
+        /// threshold, so asteroids wrapped to the opposite side almost immediately.
+        /// </summary>
+        private Vector3 GetOffCameraSpawnPosition(float outwardFromVisible)
         {
             Camera cam = _camera != null ? _camera : Camera.main;
             if (cam == null)
@@ -464,28 +498,53 @@ namespace StaticDrift.Enemies
 
             if (!cam.orthographic)
             {
-                // Perspective: spawn in front of camera at distance
                 float dist = 15f;
                 Vector2 dir = Random.insideUnitCircle.normalized;
                 Vector3 center = cam.transform.position + cam.transform.forward * dist;
                 float span = Mathf.Tan(cam.fieldOfView * 0.5f * Mathf.Deg2Rad) * dist * 2f;
-                return center + new Vector3(dir.x, dir.y, 0f) * (span * 0.5f + margin);
+                return center + new Vector3(dir.x, dir.y, 0f) * (span * 0.5f + outwardFromVisible);
             }
 
-            float halfH = cam.orthographicSize + margin;
+            outwardFromVisible = Mathf.Max(0.05f, outwardFromVisible);
+            float halfH = cam.orthographicSize;
             float halfW = halfH * cam.aspect;
-            float radius = Mathf.Sqrt(halfW * halfW + halfH * halfH);
-            Vector2 d = Random.insideUnitCircle.normalized;
             Vector3 origin = cam.transform.position;
             origin.z = 0f;
-            return origin + new Vector3(d.x * radius, d.y * radius, 0f);
+            Vector2 c = new Vector2(origin.x, origin.y);
+
+            int side = Random.Range(0, 4);
+            float edgeT = Random.Range(0f, 1f);
+            Vector2 p;
+            switch (side)
+            {
+                case 0:
+                    p = new Vector2(c.x + halfW + outwardFromVisible, Mathf.Lerp(c.y - halfH, c.y + halfH, edgeT));
+                    break;
+                case 1:
+                    p = new Vector2(c.x - halfW - outwardFromVisible, Mathf.Lerp(c.y - halfH, c.y + halfH, edgeT));
+                    break;
+                case 2:
+                    p = new Vector2(Mathf.Lerp(c.x - halfW, c.x + halfW, edgeT), c.y + halfH + outwardFromVisible);
+                    break;
+                default:
+                    p = new Vector2(Mathf.Lerp(c.x - halfW, c.x + halfW, edgeT), c.y - halfH - outwardFromVisible);
+                    break;
+            }
+
+            return new Vector3(p.x, p.y, 0f);
         }
 
-        private float GetSpawnMarginForSize(Asteroid.AsteroidSize size)
+        private float ClampSpawnOutwardPadding(float requested)
+        {
+            float maxPad = Mathf.Max(0.12f, _screenWrapMargin * 0.82f);
+            return Mathf.Clamp(requested, 0.08f, maxPad);
+        }
+
+        private float GetOutwardSpawnPaddingForSize(Asteroid.AsteroidSize size)
         {
             Vector3 scale = GetScale(size);
-            float asteroidRadius = Mathf.Max(scale.x, scale.y) * 0.8f;
-            return _spawnEdgeMargin + asteroidRadius + _screenWrapMargin;
+            float asteroidRadius = Mathf.Max(scale.x, scale.y) * 0.5f;
+            return _spawnEdgeMargin * 0.28f + asteroidRadius * 0.2f;
         }
 
         private Vector2 GetInwardDirectionFromSpawn(Vector2 spawnPosition)

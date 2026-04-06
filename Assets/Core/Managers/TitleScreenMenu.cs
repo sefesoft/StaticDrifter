@@ -20,6 +20,7 @@ namespace StaticDrift.Managers
         private GameObject _mainPanel;
         private GameObject _optionsPanel;
         private GameObject _leaderboardPanel;
+        private GameObject _achievementsPanel;
         private TMP_Text _musicVolumeValueText;
         private TMP_Text _sfxVolumeValueText;
         private TMP_Text _sensitivityValueText;
@@ -29,6 +30,8 @@ namespace StaticDrift.Managers
         private Button _exitButton;
         private Button _backButton;
         private Button _leaderboardBackButton;
+        private Button _achievementsCloseButton;
+        private TMP_Text _achievementListText;
         private Slider _musicVolumeSlider;
         private Slider _sfxVolumeSlider;
         private UiSelectionKeepAlive _selectionKeepAlive;
@@ -99,9 +102,19 @@ namespace StaticDrift.Managers
             leaderboardRect.offsetMax = Vector2.zero;
             _leaderboardPanel.SetActive(false);
 
+            _achievementsPanel = new GameObject("AchievementsMenu");
+            _achievementsPanel.transform.SetParent(panel.transform, false);
+            RectTransform achievementsRect = _achievementsPanel.AddComponent<RectTransform>();
+            achievementsRect.anchorMin = Vector2.zero;
+            achievementsRect.anchorMax = Vector2.one;
+            achievementsRect.offsetMin = Vector2.zero;
+            achievementsRect.offsetMax = Vector2.zero;
+            _achievementsPanel.SetActive(false);
+
             BuildMainMenu();
             BuildOptionsMenu();
             BuildLeaderboardMenu();
+            BuildAchievementsMenu();
             GameObject initial = _startButton != null ? _startButton.gameObject : null;
             SetSelected(initial);
             SyncMenuSelectionTargets(initial);
@@ -114,26 +127,32 @@ namespace StaticDrift.Managers
                 CreateText(_mainPanel.transform, "Title", "STATIC DRIFT", new Vector2(0.5f, 0.72f), 92f);
             }
 
-            _startButton = CreateButton(_mainPanel.transform, "StartButton", "Start", new Vector2(0.5f, 0.47f), () =>
+            _startButton = CreateMainMenuButton(_mainPanel.transform, "StartButton", "Start", new Vector2(0.5f, 0.485f), () =>
             {
                 AudioManager.EnsureExists().PlayUiConfirm();
                 Time.timeScale = 1f;
                 SceneManager.LoadScene(_gameplaySceneName);
             });
 
-            _optionsButton = CreateButton(_mainPanel.transform, "OptionsButton", "Options", new Vector2(0.5f, 0.36f), () =>
+            _optionsButton = CreateMainMenuButton(_mainPanel.transform, "OptionsButton", "Options", new Vector2(0.5f, 0.385f), () =>
             {
                 AudioManager.EnsureExists().PlayUiConfirm();
                 ShowOptions(true);
             });
 
-            _leaderboardButton = CreateButton(_mainPanel.transform, "LeaderboardButton", "Leaderboard", new Vector2(0.5f, 0.25f), () =>
+            CreateMainMenuButton(_mainPanel.transform, "AchievementsButton", "Achievements", new Vector2(0.5f, 0.285f), () =>
+            {
+                AudioManager.EnsureExists().PlayUiConfirm();
+                ShowAchievements(true);
+            });
+
+            _leaderboardButton = CreateMainMenuButton(_mainPanel.transform, "LeaderboardButton", "Leaderboard", new Vector2(0.5f, 0.185f), () =>
             {
                 AudioManager.EnsureExists().PlayUiConfirm();
                 ShowLeaderboard(true);
             });
 
-            _exitButton = CreateButton(_mainPanel.transform, "ExitButton", "Exit", new Vector2(0.5f, 0.14f), ExitGame);
+            _exitButton = CreateMainMenuButton(_mainPanel.transform, "ExitButton", "Exit", new Vector2(0.5f, 0.085f), ExitGame);
         }
 
         private void CreateBackgroundImage(Transform parent)
@@ -257,6 +276,128 @@ namespace StaticDrift.Managers
             });
         }
 
+        private void BuildAchievementsMenu()
+        {
+            EnsureAchievementsBackdrop();
+
+            bool mobile = UseTitleMobileLayout();
+            Vector2 containerSize = mobile ? new Vector2(1240f, 920f) : new Vector2(1080f, 820f);
+            Transform contentRoot = CreateMenuContainer(_achievementsPanel.transform, "AchievementsContainer", containerSize).transform;
+            contentRoot.SetAsLastSibling();
+
+            float titleFont = mobile ? 86f : 72f;
+            CreateText(contentRoot, "AchievementsTitle", "ACHIEVEMENTS", new Vector2(0.5f, 0.88f), titleFont);
+
+            AchievementListPanel.Layout scrollLayout = new AchievementListPanel.Layout(
+                new Vector2(0.03f, 0.05f),
+                new Vector2(0.97f, 0.805f),
+                Vector2.zero,
+                Vector2.zero);
+
+            float bodyFont = mobile ? 40f : 34f;
+            int descRich = mobile ? 34 : 30;
+            float sbw = mobile ? 44f : 38f;
+            AchievementListPanel.Style achStyle = new AchievementListPanel.Style(bodyFont, descRich, sbw);
+            _achievementListText = AchievementListPanel.CreateScrollingBody(contentRoot, scrollLayout, achStyle);
+
+            _achievementsCloseButton = CreateAchievementsCloseXButton(contentRoot, () =>
+            {
+                AudioManager.EnsureExists().PlayUiConfirm();
+                ShowAchievements(false);
+            });
+        }
+
+        private static Button CreateAchievementsCloseXButton(Transform parent, UnityEngine.Events.UnityAction onClose)
+        {
+            bool mobile = Mathf.Min(Screen.width, Screen.height) <= 1080 || Application.isMobilePlatform;
+            GameObject go = new GameObject("AchievementsCloseButton");
+            go.transform.SetParent(parent, false);
+            go.transform.SetAsLastSibling();
+            RectTransform rect = go.AddComponent<RectTransform>();
+            rect.anchorMin = new Vector2(1f, 1f);
+            rect.anchorMax = new Vector2(1f, 1f);
+            rect.pivot = new Vector2(1f, 1f);
+            float inset = mobile ? 10f : 14f;
+            float side = mobile ? 96f : 84f;
+            rect.anchoredPosition = new Vector2(-inset, -inset);
+            rect.sizeDelta = new Vector2(side, side);
+
+            Image image = go.AddComponent<Image>();
+            Button button = go.AddComponent<Button>();
+            button.targetGraphic = image;
+            button.onClick.AddListener(onClose);
+            go.AddComponent<UiSelectOnPointerEnter>();
+
+            GameObject textGo = new GameObject("Label");
+            textGo.transform.SetParent(go.transform, false);
+            RectTransform textRect = textGo.AddComponent<RectTransform>();
+            textRect.anchorMin = Vector2.zero;
+            textRect.anchorMax = Vector2.one;
+            textRect.offsetMin = new Vector2(8f, 8f);
+            textRect.offsetMax = new Vector2(-8f, -8f);
+            TMP_Text text = textGo.AddComponent<TextMeshProUGUI>();
+            text.text = "X";
+            text.fontSize = mobile ? 52f : 46f;
+            text.fontStyle = FontStyles.Bold;
+            text.alignment = TextAlignmentOptions.Center;
+            text.color = new Color(0.88f, 0.97f, 1f, 1f);
+            text.textWrappingMode = TextWrappingModes.NoWrap;
+            text.raycastTarget = false;
+            PixelArtUiSkin.ApplyButtonStyle(button, image, text);
+            return button;
+        }
+
+        private static Button CreateMainMenuButton(Transform parent, string name, string label, Vector2 anchor, UnityEngine.Events.UnityAction callback)
+        {
+            Button btn = CreateButton(parent, name, label, anchor, callback);
+            RectTransform rt = btn.GetComponent<RectTransform>();
+            if (rt != null)
+            {
+                rt.sizeDelta = new Vector2(400f, 78f);
+            }
+
+            TMP_Text labelText = btn.GetComponentInChildren<TMP_Text>();
+            if (labelText != null)
+            {
+                labelText.fontSizeMax = 42f;
+                labelText.fontSizeMin = 16f;
+            }
+
+            return btn;
+        }
+
+        private void EnsureAchievementsBackdrop()
+        {
+            if (_achievementsPanel == null)
+            {
+                return;
+            }
+
+            Transform existing = _achievementsPanel.transform.Find("AchievementsBackdrop");
+            if (existing != null)
+            {
+                return;
+            }
+
+            GameObject go = new GameObject("AchievementsBackdrop");
+            go.transform.SetParent(_achievementsPanel.transform, false);
+            go.transform.SetAsFirstSibling();
+            RectTransform rt = go.AddComponent<RectTransform>();
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.offsetMin = Vector2.zero;
+            rt.offsetMax = Vector2.zero;
+            Image img = go.AddComponent<Image>();
+            img.color = new Color(0.02f, 0.03f, 0.06f, 0.94f);
+            img.raycastTarget = true;
+        }
+
+        private static bool UseTitleMobileLayout()
+        {
+            int shortSide = Mathf.Min(Screen.width, Screen.height);
+            return Application.isMobilePlatform || shortSide <= 1080;
+        }
+
         private static GameObject CreateMenuContainer(Transform parent, string name, Vector2 size)
         {
             GameObject go = new GameObject(name);
@@ -287,6 +428,11 @@ namespace StaticDrift.Managers
                 _leaderboardPanel.SetActive(false);
             }
 
+            if (_achievementsPanel != null)
+            {
+                _achievementsPanel.SetActive(false);
+            }
+
             GameObject next = show ? (_musicVolumeSlider != null ? _musicVolumeSlider.gameObject : null) : (_startButton != null ? _startButton.gameObject : null);
             SetSelected(next);
             SyncMenuSelectionTargets(next);
@@ -307,7 +453,50 @@ namespace StaticDrift.Managers
                 _leaderboardPanel.SetActive(show);
             }
 
+            if (_achievementsPanel != null)
+            {
+                _achievementsPanel.SetActive(false);
+            }
+
             GameObject next = show ? (_leaderboardBackButton != null ? _leaderboardBackButton.gameObject : null) : (_startButton != null ? _startButton.gameObject : null);
+            SetSelected(next);
+            SyncMenuSelectionTargets(next);
+        }
+
+        private void ShowAchievements(bool show)
+        {
+            if (_mainPanel != null)
+            {
+                _mainPanel.SetActive(!show);
+            }
+
+            if (_optionsPanel != null)
+            {
+                _optionsPanel.SetActive(false);
+            }
+
+            if (_leaderboardPanel != null)
+            {
+                _leaderboardPanel.SetActive(false);
+            }
+
+            if (_achievementsPanel != null)
+            {
+                _achievementsPanel.SetActive(show);
+                if (show)
+                {
+                    _achievementsPanel.transform.SetAsLastSibling();
+                }
+            }
+
+            if (show)
+            {
+                AchievementListPanel.RefreshBodyText(_achievementListText);
+            }
+
+            GameObject next = show
+                ? (_achievementsCloseButton != null ? _achievementsCloseButton.gameObject : null)
+                : (_startButton != null ? _startButton.gameObject : null);
             SetSelected(next);
             SyncMenuSelectionTargets(next);
         }
@@ -548,6 +737,10 @@ namespace StaticDrift.Managers
             else if (backPressed && _leaderboardPanel != null && _leaderboardPanel.activeSelf)
             {
                 ShowLeaderboard(false);
+            }
+            else if (backPressed && _achievementsPanel != null && _achievementsPanel.activeSelf)
+            {
+                ShowAchievements(false);
             }
         }
 

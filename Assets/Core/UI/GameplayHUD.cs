@@ -4,6 +4,7 @@ using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.UI;
 using System.Collections.Generic;
+using System.Text;
 using StaticDrift.Player;
 using StaticDrift.Managers;
 using StaticDrift.Cards;
@@ -11,8 +12,17 @@ using TMPro;
 
 namespace StaticDrift.UI
 {
+    [System.Serializable]
+    public class LoadoutSlotHudEntry
+    {
+        public Image Diamond;
+        public TMP_Text Letter;
+        public TMP_Text Count;
+    }
+
     /// <summary>
     /// Updates timer (top center) and player stats (center bottom). Timer comes from MatchController when present.
+    /// HUD hierarchy is authored on the GameplayHUD prefab; use menu Static Drift / Setup Gameplay HUD Prefab.
     /// </summary>
     public class GameplayHUD : MonoBehaviour
     {
@@ -21,6 +31,7 @@ namespace StaticDrift.UI
         [SerializeField] private TMP_Text _scoreText;
         [SerializeField] private TMP_Text _waveText;
         [SerializeField] private TMP_Text _buildText;
+        [SerializeField] private LoadoutSlotHudEntry[] _loadoutSlots;
         [SerializeField] private GameObject _bossPanel;
         [SerializeField] private Image _bossHpFill;
         [SerializeField] private TMP_Text _bossHpText;
@@ -29,8 +40,12 @@ namespace StaticDrift.UI
         [SerializeField] private RectTransform _playerHpFillRect;
         [SerializeField] private TMP_Text _playerHpText;
         [SerializeField] private Button _pauseButton;
+        [SerializeField] private GameObject _rotateLeftButton;
+        [SerializeField] private GameObject _rotateRightButton;
+        [SerializeField] private GameObject _accelerateButton;
         [SerializeField] private string _statsFormat = "HP: {0:F0} / {1:F0}";
         [SerializeField] private bool _createTouchControls = true;
+        [SerializeField] private bool _applyPauseLayoutFromCode;
 
         private PlayerHealth _playerHealth;
         private PlayerController _playerController;
@@ -43,27 +58,25 @@ namespace StaticDrift.UI
         private readonly List<GameObject> _touchGameplayButtonRoots = new List<GameObject>(3);
         private bool _touchGameplayButtonsVisible = true;
         private static Sprite _circleButtonSprite;
-        private TMP_Text[] _buildTagCountTexts;
-        private Image[] _buildSlotDiamonds;
-        private TMP_Text[] _buildSlotLetters;
 
         private const string PlayerTag = "Player";
 
         private void Start()
         {
             TryBindPlayerReferences();
-
+            EnsureEventSystem();
+            CachePlayerHpFillRectIfNeeded();
+            LogMissingHudReferences();
             if (_createTouchControls)
             {
-                EnsureTouchControls();
+                WireTouchControlZones();
             }
 
-            EnsureInfoLabels();
-            EnsureTimerWaveCluster();
-            EnsureBuildUpgradeRow();
-            EnsureBossPanel();
-            EnsurePlayerHpPanel();
-            EnsurePauseButton();
+            WirePauseButton();
+            if (_applyPauseLayoutFromCode && _pauseButton != null)
+            {
+                ApplyPauseButtonLayout(_pauseButton.GetComponent<RectTransform>());
+            }
 
             if (_playerStatsText != null)
             {
@@ -72,6 +85,75 @@ namespace StaticDrift.UI
 
             ApplyFonts();
             ApplyHudVisualStyle();
+            EnsureAchievementToastPresenter();
+        }
+
+        private void EnsureAchievementToastPresenter()
+        {
+            AchievementToastPresenter.EnsureGlobally();
+        }
+
+        private void CachePlayerHpFillRectIfNeeded()
+        {
+            if (_playerHpFillRect == null && _playerHpFill != null)
+            {
+                _playerHpFillRect = _playerHpFill.rectTransform;
+            }
+        }
+
+        private void LogMissingHudReferences()
+        {
+            var sb = new StringBuilder();
+            void Need(string name, Object obj)
+            {
+                if (obj == null)
+                {
+                    sb.AppendLine("  - " + name);
+                }
+            }
+
+            Need("_timerText", _timerText);
+            Need("_scoreText", _scoreText);
+            Need("_waveText", _waveText);
+            Need("_buildText", _buildText);
+            Need("_bossPanel", _bossPanel);
+            Need("_bossHpFill", _bossHpFill);
+            Need("_bossHpText", _bossHpText);
+            Need("_playerHpPanel", _playerHpPanel);
+            Need("_playerHpFill", _playerHpFill);
+            Need("_playerHpText", _playerHpText);
+            Need("_pauseButton", _pauseButton);
+
+            if (_loadoutSlots == null || _loadoutSlots.Length < 4)
+            {
+                sb.AppendLine("  - _loadoutSlots (need 4 entries)");
+            }
+            else
+            {
+                for (int i = 0; i < 4; i++)
+                {
+                    LoadoutSlotHudEntry e = _loadoutSlots[i];
+                    if (e == null || e.Diamond == null || e.Letter == null || e.Count == null)
+                    {
+                        sb.AppendLine("  - _loadoutSlots[" + i + "] (Diamond, Letter, Count)");
+                    }
+                }
+            }
+
+            if (_createTouchControls)
+            {
+                Need("_rotateLeftButton", _rotateLeftButton);
+                Need("_rotateRightButton", _rotateRightButton);
+                Need("_accelerateButton", _accelerateButton);
+            }
+
+            if (sb.Length > 0)
+            {
+                Debug.LogWarning(
+                    "[GameplayHUD] Missing serialized references on '" + gameObject.name + "'. Assign them on the prefab or run Static Drift / Setup Gameplay HUD Prefab.\n"
+                    + sb,
+                    this);
+            }
         }
 
         private void Update()
@@ -127,18 +209,23 @@ namespace StaticDrift.UI
             }
 
             RunUpgradeController runUpgrades = RunUpgradeController.Instance;
-            if (_buildTagCountTexts != null && _buildTagCountTexts.Length == 4 && runUpgrades != null
-                && _buildSlotDiamonds != null && _buildSlotLetters != null)
+            if (_loadoutSlots != null && _loadoutSlots.Length >= 4 && runUpgrades != null)
             {
                 for (int i = 0; i < 4; i++)
                 {
+                    LoadoutSlotHudEntry e = _loadoutSlots[i];
+                    if (e == null || e.Count == null || e.Letter == null || e.Diamond == null)
+                    {
+                        continue;
+                    }
+
                     CardTag tag = runUpgrades.GetLoadoutSlotTag(i);
-                    _buildTagCountTexts[i].text = runUpgrades.GetLoadoutSlotStacksText(i);
-                    _buildSlotLetters[i].text = GetHudLoadoutLetter(tag);
-                    _buildSlotDiamonds[i].color = tag == CardTag.None
+                    e.Count.text = runUpgrades.GetLoadoutSlotStacksText(i);
+                    e.Letter.text = GetHudLoadoutLetter(tag);
+                    e.Diamond.color = tag == CardTag.None
                         ? new Color(0.32f, 0.36f, 0.42f, 0.55f)
                         : UpgradeHudVisuals.GetTagColor(tag);
-                    _buildSlotLetters[i].color = tag == CardTag.None
+                    e.Letter.color = tag == CardTag.None
                         ? new Color(0.82f, 0.86f, 0.92f, 1f)
                         : new Color(0.04f, 0.05f, 0.08f, 1f);
                 }
@@ -220,41 +307,53 @@ namespace StaticDrift.UI
             UpdateTouchGameplayButtonsVisibility();
         }
 
-        private void EnsureTouchControls()
+        private void WireTouchControlZones()
         {
-            EnsureEventSystem();
-
-            Transform rotateLeft = transform.Find("RotateLeftButton");
-            if (rotateLeft == null)
-            {
-                CreateControlButton("RotateLeftButton", new Vector2(0f, 0f), new Vector2(0.12f, 1f), "L");
-            }
-
-            Transform rotateRight = transform.Find("RotateRightButton");
-            if (rotateRight == null)
-            {
-                CreateControlButton("RotateRightButton", new Vector2(0.12f, 0f), new Vector2(0.24f, 1f), "R");
-            }
-
-            Transform accelerate = transform.Find("AccelerateButton");
-            if (accelerate == null)
-            {
-                CreateControlButton("AccelerateButton", new Vector2(0.78f, 0f), new Vector2(1f, 0.88f), "A");
-            }
-
+            _controlVisuals.Clear();
+            _controlVisualHomePositions.Clear();
             _touchGameplayButtonRoots.Clear();
-            CollectTouchGameplayButtonRoot("RotateLeftButton");
-            CollectTouchGameplayButtonRoot("RotateRightButton");
-            CollectTouchGameplayButtonRoot("AccelerateButton");
+            WireOneTouchZone(_rotateLeftButton, "RotateLeftButton");
+            WireOneTouchZone(_rotateRightButton, "RotateRightButton");
+            WireOneTouchZone(_accelerateButton, "AccelerateButton");
         }
 
-        private void CollectTouchGameplayButtonRoot(string childName)
+        private void WireOneTouchZone(GameObject zoneRoot, string objectName)
         {
-            Transform t = transform.Find(childName);
-            if (t != null)
+            if (zoneRoot == null)
             {
-                _touchGameplayButtonRoots.Add(t.gameObject);
+                return;
             }
+
+            EventTrigger old = zoneRoot.GetComponent<EventTrigger>();
+            if (old != null)
+            {
+                Destroy(old);
+            }
+
+            Transform visualTf = zoneRoot.transform.Find("Visual");
+            if (visualTf == null)
+            {
+                Debug.LogWarning("[GameplayHUD] Touch zone '" + objectName + "' has no child 'Visual'.", zoneRoot);
+                _touchGameplayButtonRoots.Add(zoneRoot);
+                return;
+            }
+
+            RectTransform visualRect = visualTf.GetComponent<RectTransform>();
+            Image visualImg = visualTf.GetComponent<Image>();
+            if (visualImg != null && visualImg.sprite == null)
+            {
+                visualImg.sprite = GetCircleButtonSprite();
+                visualImg.type = Image.Type.Sliced;
+            }
+
+            if (visualRect != null)
+            {
+                _controlVisuals[objectName] = visualRect;
+                _controlVisualHomePositions[objectName] = visualRect.anchoredPosition;
+            }
+
+            AddHoldEvents(zoneRoot, objectName);
+            _touchGameplayButtonRoots.Add(zoneRoot);
         }
 
         private void UpdateTouchGameplayButtonsVisibility()
@@ -322,6 +421,11 @@ namespace StaticDrift.UI
             }
 
             _touchGameplayButtonsVisible = visible;
+            if (!visible)
+            {
+                ReleaseAllTouchControlInput();
+            }
+
             for (int i = 0; i < _touchGameplayButtonRoots.Count; i++)
             {
                 GameObject go = _touchGameplayButtonRoots[i];
@@ -344,61 +448,10 @@ namespace StaticDrift.UI
             eventSystemGo.AddComponent<InputSystemUIInputModule>();
         }
 
-        private void CreateControlButton(string objectName, Vector2 anchorMin, Vector2 anchorMax, string label)
-        {
-            GameObject buttonGo = new GameObject(objectName);
-            buttonGo.transform.SetParent(transform, false);
-
-            RectTransform rect = buttonGo.AddComponent<RectTransform>();
-            rect.anchorMin = anchorMin;
-            rect.anchorMax = anchorMax;
-            rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.offsetMin = Vector2.zero;
-            rect.offsetMax = Vector2.zero;
-
-            Image bg = buttonGo.AddComponent<Image>();
-            bg.color = new Color(1f, 1f, 1f, 0.001f);
-
-            GameObject visualGo = new GameObject("Visual");
-            visualGo.transform.SetParent(buttonGo.transform, false);
-            RectTransform visualRect = visualGo.AddComponent<RectTransform>();
-            visualRect.anchorMin = new Vector2(0.5f, 0f);
-            visualRect.anchorMax = new Vector2(0.5f, 0f);
-            visualRect.pivot = new Vector2(0.5f, 0f);
-            visualRect.anchoredPosition = new Vector2(0f, 34f);
-            visualRect.sizeDelta = new Vector2(150f, 150f);
-
-            Image visualBg = visualGo.AddComponent<Image>();
-            visualBg.sprite = GetCircleButtonSprite();
-            visualBg.type = Image.Type.Sliced;
-            visualBg.color = new Color(0.12f, 0.16f, 0.25f, 0.45f);
-            visualBg.raycastTarget = false;
-
-            GameObject textGo = new GameObject("Label");
-            textGo.transform.SetParent(visualGo.transform, false);
-            RectTransform textRect = textGo.AddComponent<RectTransform>();
-            textRect.anchorMin = Vector2.zero;
-            textRect.anchorMax = Vector2.one;
-            textRect.offsetMin = Vector2.zero;
-            textRect.offsetMax = Vector2.zero;
-
-            TMP_Text text = textGo.AddComponent<TextMeshProUGUI>();
-            text.text = label;
-            text.fontSize = 44f;
-            text.fontStyle = FontStyles.Bold;
-            text.alignment = TextAlignmentOptions.Center;
-            text.color = new Color(0.76f, 0.93f, 1f, 0.95f);
-            text.raycastTarget = false;
-
-            _controlVisuals[objectName] = visualRect;
-            _controlVisualHomePositions[objectName] = visualRect.anchoredPosition;
-            AddHoldEvents(buttonGo, objectName);
-        }
-
         private void AddHoldEvents(GameObject target, string objectName)
         {
             EventTrigger trigger = target.AddComponent<EventTrigger>();
-            trigger.triggers = new System.Collections.Generic.List<EventTrigger.Entry>();
+            trigger.triggers = new List<EventTrigger.Entry>();
 
             AddTrigger(trigger, EventTriggerType.PointerDown, eventData =>
             {
@@ -521,36 +574,30 @@ namespace StaticDrift.UI
                 _buildText.lineSpacing = -8f;
             }
 
-            if (_buildTagCountTexts != null)
+            if (_loadoutSlots != null)
             {
-                for (int i = 0; i < _buildTagCountTexts.Length; i++)
+                for (int i = 0; i < _loadoutSlots.Length; i++)
                 {
-                    TMP_Text ct = _buildTagCountTexts[i];
-                    if (ct == null)
+                    LoadoutSlotHudEntry e = _loadoutSlots[i];
+                    if (e == null)
                     {
                         continue;
                     }
 
-                    ct.fontStyle = FontStyles.Bold;
-                    ct.fontSize = UseMobileHudLayout() ? 30f : 26f;
-                    ct.color = new Color(0.88f, 0.9f, 1f, 0.95f);
-                    GameFontLibrary.ApplyOutline(ct, 0.14f, new Color(0.05f, 0.05f, 0.09f, 0.88f));
-                }
-            }
-
-            if (_buildSlotLetters != null)
-            {
-                for (int i = 0; i < _buildSlotLetters.Length; i++)
-                {
-                    TMP_Text lt = _buildSlotLetters[i];
-                    if (lt == null)
+                    if (e.Count != null)
                     {
-                        continue;
+                        e.Count.fontStyle = FontStyles.Bold;
+                        e.Count.fontSize = UseMobileHudLayout() ? 30f : 26f;
+                        e.Count.color = new Color(0.88f, 0.9f, 1f, 0.95f);
+                        GameFontLibrary.ApplyOutline(e.Count, 0.14f, new Color(0.05f, 0.05f, 0.09f, 0.88f));
                     }
 
-                    lt.fontStyle = FontStyles.Bold;
-                    lt.fontSize = Mathf.Max(22f, (UseMobileHudLayout() ? 52f : 44f) * 0.58f);
-                    GameFontLibrary.ApplyOutline(lt, 0.12f, new Color(0.05f, 0.05f, 0.09f, 0.88f));
+                    if (e.Letter != null)
+                    {
+                        e.Letter.fontStyle = FontStyles.Bold;
+                        e.Letter.fontSize = Mathf.Max(22f, (UseMobileHudLayout() ? 52f : 44f) * 0.58f);
+                        GameFontLibrary.ApplyOutline(e.Letter, 0.12f, new Color(0.05f, 0.05f, 0.09f, 0.88f));
+                    }
                 }
             }
 
@@ -578,89 +625,26 @@ namespace StaticDrift.UI
             GameFontLibrary.Apply(_buildText);
             GameFontLibrary.Apply(_bossHpText);
             GameFontLibrary.Apply(_playerHpText);
-            if (_buildTagCountTexts != null)
+            if (_loadoutSlots != null)
             {
-                for (int i = 0; i < _buildTagCountTexts.Length; i++)
+                for (int i = 0; i < _loadoutSlots.Length; i++)
                 {
-                    if (_buildTagCountTexts[i] != null)
+                    LoadoutSlotHudEntry e = _loadoutSlots[i];
+                    if (e == null)
                     {
-                        GameFontLibrary.Apply(_buildTagCountTexts[i]);
+                        continue;
+                    }
+
+                    if (e.Count != null)
+                    {
+                        GameFontLibrary.Apply(e.Count);
+                    }
+
+                    if (e.Letter != null)
+                    {
+                        GameFontLibrary.Apply(e.Letter);
                     }
                 }
-            }
-
-            if (_buildSlotLetters != null)
-            {
-                for (int i = 0; i < _buildSlotLetters.Length; i++)
-                {
-                    if (_buildSlotLetters[i] != null)
-                    {
-                        GameFontLibrary.Apply(_buildSlotLetters[i]);
-                    }
-                }
-            }
-        }
-
-        private void EnsureInfoLabels()
-        {
-            if (_scoreText == null)
-            {
-                _scoreText = CreateInfoLabel("ScoreText", new Vector2(0.04f, 0.955f), TextAlignmentOptions.Left, "SCORE 0", new Vector2(520f, 86f));
-            }
-            if (_waveText == null)
-            {
-                _waveText = CreateInfoLabel("WaveText", new Vector2(0.5f, 0.955f), TextAlignmentOptions.Center, "WAVE 1", new Vector2(400f, 86f));
-            }
-            if (_buildText == null)
-            {
-                _buildText = CreateInfoLabel("BuildText", new Vector2(0.965f, 0.90f), TextAlignmentOptions.Right, "BUILD", new Vector2(760f, 132f));
-            }
-        }
-
-        private void EnsureTimerWaveCluster()
-        {
-            if (_timerText == null)
-            {
-                return;
-            }
-
-            const string clusterName = "TimerWaveCluster";
-            Transform clusterTf = transform.Find(clusterName);
-            RectTransform clusterRt;
-            if (clusterTf == null)
-            {
-                GameObject clusterGo = new GameObject(clusterName, typeof(RectTransform));
-                clusterTf = clusterGo.transform;
-                clusterTf.SetParent(transform, false);
-                clusterRt = clusterGo.GetComponent<RectTransform>();
-                clusterRt.anchorMin = new Vector2(0.5f, 1f);
-                clusterRt.anchorMax = new Vector2(0.5f, 1f);
-                clusterRt.pivot = new Vector2(0.5f, 1f);
-                clusterRt.anchoredPosition = new Vector2(0f, -14f);
-                clusterRt.sizeDelta = new Vector2(440f, 108f);
-            }
-            else
-            {
-                clusterRt = clusterTf.GetComponent<RectTransform>();
-            }
-
-            _timerText.transform.SetParent(clusterRt, false);
-            RectTransform timerRt = _timerText.rectTransform;
-            timerRt.anchorMin = new Vector2(0.5f, 1f);
-            timerRt.anchorMax = new Vector2(0.5f, 1f);
-            timerRt.pivot = new Vector2(0.5f, 1f);
-            timerRt.anchoredPosition = Vector2.zero;
-            timerRt.sizeDelta = new Vector2(400f, 58f);
-
-            if (_waveText != null)
-            {
-                _waveText.transform.SetParent(clusterRt, false);
-                RectTransform waveRt = _waveText.rectTransform;
-                waveRt.anchorMin = new Vector2(0.5f, 1f);
-                waveRt.anchorMax = new Vector2(0.5f, 1f);
-                waveRt.pivot = new Vector2(0.5f, 1f);
-                waveRt.anchoredPosition = new Vector2(0f, -56f);
-                waveRt.sizeDelta = new Vector2(420f, 46f);
             }
         }
 
@@ -668,14 +652,6 @@ namespace StaticDrift.UI
         {
             int shortSide = Mathf.Min(Screen.width, Screen.height);
             return Application.isMobilePlatform || shortSide <= 1080;
-        }
-
-        /// <summary>
-        /// Horizontal offset (px) to inset the build row from the screen edge so it does not sit under the top-right pause button (margin + button width + gap).
-        /// </summary>
-        private static float GetBuildHudPauseHorizontalClearancePx()
-        {
-            return UseMobileHudLayout() ? 152f : 136f;
         }
 
         private static string GetHudLoadoutLetter(CardTag tag)
@@ -703,288 +679,6 @@ namespace StaticDrift.UI
             }
         }
 
-        private void EnsureBuildUpgradeRow()
-        {
-            if (_buildTagCountTexts != null && _buildTagCountTexts.Length == 4 && _buildSlotDiamonds != null && _buildSlotLetters != null)
-            {
-                return;
-            }
-
-            if (_buildText == null)
-            {
-                return;
-            }
-
-            Transform existingRow = transform.Find("BuildHudRow");
-            if (existingRow != null)
-            {
-                Destroy(existingRow.gameObject);
-            }
-
-            GameObject rowGo = new GameObject("BuildHudRow", typeof(RectTransform));
-            rowGo.transform.SetParent(transform, false);
-            RectTransform rowRect = rowGo.GetComponent<RectTransform>();
-            rowRect.anchorMin = new Vector2(0.965f, 0.90f);
-            rowRect.anchorMax = new Vector2(0.965f, 0.90f);
-            rowRect.pivot = new Vector2(1f, 0.5f);
-            rowRect.sizeDelta = new Vector2(920f, 140f);
-            Vector2 buildHome = _buildText.rectTransform.anchoredPosition;
-            rowRect.anchoredPosition = new Vector2(buildHome.x - GetBuildHudPauseHorizontalClearancePx(), buildHome.y);
-
-            HorizontalLayoutGroup hlg = rowGo.AddComponent<HorizontalLayoutGroup>();
-            hlg.childAlignment = TextAnchor.MiddleRight;
-            hlg.spacing = 10f;
-            hlg.childForceExpandWidth = false;
-            hlg.childForceExpandHeight = false;
-
-            _buildText.transform.SetParent(rowGo.transform, false);
-            LayoutElement buildLe = _buildText.gameObject.GetComponent<LayoutElement>();
-            if (buildLe == null)
-            {
-                buildLe = _buildText.gameObject.AddComponent<LayoutElement>();
-            }
-
-            buildLe.preferredWidth = 118f;
-            buildLe.minWidth = 96f;
-            buildLe.flexibleWidth = 0f;
-
-            RectTransform brt = _buildText.rectTransform;
-            brt.anchorMin = new Vector2(0f, 0.5f);
-            brt.anchorMax = new Vector2(0f, 0.5f);
-            brt.pivot = new Vector2(0f, 0.5f);
-            brt.anchoredPosition = Vector2.zero;
-            brt.sizeDelta = new Vector2(118f, 72f);
-
-            _buildTagCountTexts = new TMP_Text[4];
-            _buildSlotDiamonds = new Image[4];
-            _buildSlotLetters = new TMP_Text[4];
-            float iconSize = UseMobileHudLayout() ? 52f : 44f;
-
-            for (int i = 0; i < 4; i++)
-            {
-                CreateBuildTagSlot(rowGo.transform, i, iconSize, out _buildSlotDiamonds[i], out _buildSlotLetters[i], out _buildTagCountTexts[i]);
-            }
-        }
-
-        private void CreateBuildTagSlot(Transform parent, int slotIndex, float iconSize, out Image diamondImage, out TMP_Text letterTmp, out TMP_Text countText)
-        {
-            GameObject slot = new GameObject("LoadoutSlot_" + slotIndex, typeof(RectTransform));
-            slot.transform.SetParent(parent, false);
-            VerticalLayoutGroup vlg = slot.AddComponent<VerticalLayoutGroup>();
-            vlg.childAlignment = TextAnchor.MiddleCenter;
-            vlg.spacing = 2;
-            vlg.childForceExpandHeight = false;
-            vlg.childForceExpandWidth = false;
-
-            LayoutElement slotLe = slot.AddComponent<LayoutElement>();
-            slotLe.preferredWidth = iconSize + 22f;
-            slotLe.minWidth = iconSize + 6f;
-
-            GameObject iconGo = new GameObject("Icon", typeof(RectTransform));
-            iconGo.transform.SetParent(slot.transform, false);
-            RectTransform iconRt = iconGo.GetComponent<RectTransform>();
-            iconRt.sizeDelta = new Vector2(iconSize, iconSize);
-            LayoutElement iconLe = iconGo.AddComponent<LayoutElement>();
-            iconLe.preferredWidth = iconSize;
-            iconLe.preferredHeight = iconSize;
-            Image iconImage = iconGo.AddComponent<Image>();
-            iconImage.sprite = UpgradeHudVisuals.GetDiamondSprite();
-            iconImage.color = new Color(0.32f, 0.36f, 0.42f, 0.55f);
-            iconImage.preserveAspect = true;
-            iconImage.raycastTarget = false;
-            diamondImage = iconImage;
-
-            GameObject letterGo = new GameObject("Letter", typeof(RectTransform));
-            letterGo.transform.SetParent(iconGo.transform, false);
-            RectTransform letterRect = letterGo.GetComponent<RectTransform>();
-            letterRect.anchorMin = Vector2.zero;
-            letterRect.anchorMax = Vector2.one;
-            letterRect.offsetMin = Vector2.zero;
-            letterRect.offsetMax = Vector2.zero;
-            letterTmp = letterGo.AddComponent<TextMeshProUGUI>();
-            GameFontLibrary.Apply(letterTmp);
-            letterTmp.fontSize = Mathf.Max(22f, iconSize * 0.58f);
-            letterTmp.fontStyle = FontStyles.Bold;
-            letterTmp.text = "?";
-            letterTmp.color = new Color(0.04f, 0.05f, 0.08f, 1f);
-            letterTmp.alignment = TextAlignmentOptions.Center;
-            letterTmp.raycastTarget = false;
-
-            GameObject countGo = new GameObject("Count", typeof(RectTransform));
-            countGo.transform.SetParent(slot.transform, false);
-            RectTransform countRt = countGo.GetComponent<RectTransform>();
-            countRt.sizeDelta = new Vector2(iconSize + 16f, 28f);
-            LayoutElement countLe = countGo.AddComponent<LayoutElement>();
-            countLe.preferredHeight = 30f;
-            TMP_Text countTmp = countGo.AddComponent<TextMeshProUGUI>();
-            GameFontLibrary.Apply(countTmp);
-            countTmp.text = "--";
-            countTmp.fontSize = UseMobileHudLayout() ? 30f : 26f;
-            countTmp.fontStyle = FontStyles.Bold;
-            countTmp.alignment = TextAlignmentOptions.Center;
-            countTmp.color = new Color(0.88f, 0.9f, 1f, 0.95f);
-            countTmp.raycastTarget = false;
-            countText = countTmp;
-        }
-
-        private void EnsureBossPanel()
-        {
-            if (_bossPanel != null && _bossHpFill != null && _bossHpText != null)
-            {
-                return;
-            }
-
-            Transform existing = transform.Find("BossPanel");
-            if (existing != null)
-            {
-                _bossPanel = existing.gameObject;
-                Transform fill = existing.Find("Fill");
-                if (fill != null)
-                {
-                    _bossHpFill = fill.GetComponent<Image>();
-                }
-                Transform labelTransform = existing.Find("Label");
-                if (labelTransform != null)
-                {
-                    _bossHpText = labelTransform.GetComponent<TMP_Text>();
-                }
-                return;
-            }
-
-            GameObject panel = new GameObject("BossPanel");
-            panel.transform.SetParent(transform, false);
-            RectTransform rect = panel.AddComponent<RectTransform>();
-            rect.anchorMin = new Vector2(0.5f, 0.885f);
-            rect.anchorMax = new Vector2(0.5f, 0.885f);
-            rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.sizeDelta = new Vector2(720f, 44f);
-
-            Image bg = panel.AddComponent<Image>();
-            bg.color = new Color(0.08f, 0.04f, 0.05f, 0.92f);
-
-            GameObject fillGo = new GameObject("Fill");
-            fillGo.transform.SetParent(panel.transform, false);
-            RectTransform fillRect = fillGo.AddComponent<RectTransform>();
-            fillRect.anchorMin = new Vector2(0f, 0f);
-            fillRect.anchorMax = new Vector2(1f, 1f);
-            fillRect.offsetMin = new Vector2(4f, 4f);
-            fillRect.offsetMax = new Vector2(-4f, -4f);
-            Image fillImage = fillGo.AddComponent<Image>();
-            fillImage.type = Image.Type.Filled;
-            fillImage.fillMethod = Image.FillMethod.Horizontal;
-            fillImage.fillOrigin = 0;
-            fillImage.fillAmount = 1f;
-            fillImage.color = new Color(0.92f, 0.24f, 0.18f, 0.95f);
-
-            GameObject labelGo = new GameObject("Label");
-            labelGo.transform.SetParent(panel.transform, false);
-            RectTransform labelRect = labelGo.AddComponent<RectTransform>();
-            labelRect.anchorMin = Vector2.zero;
-            labelRect.anchorMax = Vector2.one;
-            labelRect.offsetMin = Vector2.zero;
-            labelRect.offsetMax = Vector2.zero;
-            TMP_Text labelText = labelGo.AddComponent<TextMeshProUGUI>();
-            GameFontLibrary.Apply(labelText);
-            labelText.fontSize = 34f;
-            labelText.fontStyle = FontStyles.Bold;
-            labelText.alignment = TextAlignmentOptions.Center;
-            labelText.color = new Color(1f, 0.92f, 0.9f, 1f);
-            labelText.text = "BOSS";
-
-            _bossPanel = panel;
-            _bossHpFill = fillImage;
-            _bossHpText = labelText;
-            _bossPanel.SetActive(false);
-        }
-
-        private void EnsurePlayerHpPanel()
-        {
-            if (_playerHpPanel != null && _playerHpFill != null && _playerHpText != null)
-            {
-                if (_playerHpFillRect == null)
-                {
-                    _playerHpFillRect = _playerHpFill.rectTransform;
-                }
-                return;
-            }
-
-            Transform existing = transform.Find("PlayerHpPanel");
-            if (existing != null)
-            {
-                _playerHpPanel = existing.gameObject;
-                EnsurePlayerHpBarVisuals(existing);
-
-                Transform label = existing.Find("Label");
-                if (label != null)
-                {
-                    _playerHpText = label.GetComponent<TMP_Text>();
-                }
-
-                return;
-            }
-
-            GameObject panel = new GameObject("PlayerHpPanel");
-            panel.transform.SetParent(transform, false);
-            RectTransform rect = panel.AddComponent<RectTransform>();
-            rect.anchorMin = new Vector2(0.5f, 0.07f);
-            rect.anchorMax = new Vector2(0.5f, 0.07f);
-            rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.sizeDelta = new Vector2(420f, 50f);
-
-            Image bg = panel.AddComponent<Image>();
-            bg.color = new Color(0.04f, 0.07f, 0.12f, 0.98f);
-            Outline outline = panel.AddComponent<Outline>();
-            outline.effectColor = new Color(0.7f, 0.9f, 1f, 0.9f);
-            outline.effectDistance = new Vector2(2f, -2f);
-            outline.useGraphicAlpha = false;
-
-            GameObject trackGo = new GameObject("Track");
-            trackGo.transform.SetParent(panel.transform, false);
-            RectTransform trackRect = trackGo.AddComponent<RectTransform>();
-            trackRect.anchorMin = Vector2.zero;
-            trackRect.anchorMax = Vector2.one;
-            trackRect.offsetMin = new Vector2(4f, 4f);
-            trackRect.offsetMax = new Vector2(-4f, -4f);
-            Image trackImage = trackGo.AddComponent<Image>();
-            trackImage.color = new Color(0.09f, 0.15f, 0.22f, 1f);
-            trackImage.raycastTarget = false;
-
-            GameObject fillGo = new GameObject("Fill");
-            fillGo.transform.SetParent(trackGo.transform, false);
-            RectTransform fillRect = fillGo.AddComponent<RectTransform>();
-            fillRect.anchorMin = Vector2.zero;
-            fillRect.anchorMax = Vector2.one;
-            fillRect.offsetMin = Vector2.zero;
-            fillRect.offsetMax = Vector2.zero;
-            fillRect.pivot = new Vector2(0f, 0.5f);
-            Image fillImage = fillGo.AddComponent<Image>();
-            fillImage.type = Image.Type.Simple;
-            fillImage.fillAmount = 1f;
-            fillImage.color = new Color(0.2f, 0.78f, 0.42f, 0.95f);
-            fillImage.raycastTarget = false;
-
-            GameObject labelGo = new GameObject("Label");
-            labelGo.transform.SetParent(panel.transform, false);
-            RectTransform labelRect = labelGo.AddComponent<RectTransform>();
-            labelRect.anchorMin = Vector2.zero;
-            labelRect.anchorMax = Vector2.one;
-            labelRect.offsetMin = Vector2.zero;
-            labelRect.offsetMax = Vector2.zero;
-            TMP_Text labelText = labelGo.AddComponent<TextMeshProUGUI>();
-            GameFontLibrary.Apply(labelText);
-            labelText.fontSize = 32f;
-            labelText.fontStyle = FontStyles.Bold;
-            labelText.alignment = TextAlignmentOptions.Center;
-            labelText.color = new Color(0.95f, 0.98f, 1f, 1f);
-            labelText.text = "HP: 100 / 100";
-            labelText.raycastTarget = false;
-
-            _playerHpPanel = panel;
-            _playerHpFill = fillImage;
-            _playerHpFillRect = fillRect;
-            _playerHpText = labelText;
-        }
-
         private void ApplyPauseButtonLayout(RectTransform rect)
         {
             if (rect == null)
@@ -1001,43 +695,35 @@ namespace StaticDrift.UI
             rect.sizeDelta = new Vector2(86f, 86f);
         }
 
-        /// <summary>
-        /// Hides the HUD pause control (e.g. while the pause Help overlay is open) so it cannot be focused via gamepad/keyboard.
-        /// </summary>
         public void SetPauseButtonHidden(bool hidden)
         {
-            EnsurePauseButton();
             if (_pauseButton != null)
             {
                 _pauseButton.gameObject.SetActive(!hidden);
             }
         }
 
-        private void EnsurePauseButton()
+        private void WirePauseButton()
         {
-            if (_pauseButton != null)
+            if (_pauseButton == null)
             {
-                ApplyPauseButtonLayout(_pauseButton.GetComponent<RectTransform>());
                 return;
             }
 
-            Transform existing = transform.Find("PauseButton");
-            if (existing != null)
+            Image image = _pauseButton.targetGraphic as Image;
+            if (image == null)
             {
-                _pauseButton = existing.GetComponent<Button>();
-                ApplyPauseButtonLayout(existing.GetComponent<RectTransform>());
-                return;
+                image = _pauseButton.GetComponent<Image>();
             }
 
-            GameObject buttonGo = new GameObject("PauseButton");
-            buttonGo.transform.SetParent(transform, false);
-            RectTransform rect = buttonGo.AddComponent<RectTransform>();
-            ApplyPauseButtonLayout(rect);
+            TMP_Text label = _pauseButton.GetComponentInChildren<TMP_Text>(true);
+            if (image != null && label != null)
+            {
+                PixelArtUiSkin.ApplyButtonStyle(_pauseButton, image, label);
+            }
 
-            Image image = buttonGo.AddComponent<Image>();
-            Button button = buttonGo.AddComponent<Button>();
-            button.targetGraphic = image;
-            button.onClick.AddListener(() =>
+            _pauseButton.onClick.RemoveAllListeners();
+            _pauseButton.onClick.AddListener(() =>
             {
                 MatchController match = MatchController.Instance;
                 if (match != null)
@@ -1046,53 +732,6 @@ namespace StaticDrift.UI
                     match.TogglePause();
                 }
             });
-
-            GameObject textGo = new GameObject("Label");
-            textGo.transform.SetParent(buttonGo.transform, false);
-            RectTransform textRect = textGo.AddComponent<RectTransform>();
-            textRect.anchorMin = Vector2.zero;
-            textRect.anchorMax = Vector2.one;
-            textRect.offsetMin = Vector2.zero;
-            textRect.offsetMax = Vector2.zero;
-
-            TMP_Text text = textGo.AddComponent<TextMeshProUGUI>();
-            text.text = "II";
-            text.fontSize = 34f;
-            text.fontStyle = FontStyles.Bold;
-            text.alignment = TextAlignmentOptions.Center;
-            text.color = new Color(0.88f, 0.97f, 1f, 1f);
-            text.raycastTarget = false;
-
-            PixelArtUiSkin.ApplyButtonStyle(button, image, text);
-            _pauseButton = button;
-        }
-
-        private TMP_Text CreateInfoLabel(string name, Vector2 anchor, TextAlignmentOptions alignment, string startText, Vector2 size)
-        {
-            GameObject go = new GameObject(name);
-            go.transform.SetParent(transform, false);
-            RectTransform rect = go.AddComponent<RectTransform>();
-            rect.anchorMin = anchor;
-            rect.anchorMax = anchor;
-            float pivotX = 0.5f;
-            if (anchor.x < 0.33f)
-            {
-                pivotX = 0f;
-            }
-            else if (anchor.x > 0.67f)
-            {
-                pivotX = 1f;
-            }
-
-            rect.pivot = new Vector2(pivotX, 0.5f);
-            rect.sizeDelta = size;
-            TMP_Text text = go.AddComponent<TextMeshProUGUI>();
-            text.text = startText;
-            GameFontLibrary.Apply(text);
-            text.fontSize = 46f;
-            text.alignment = alignment;
-            text.raycastTarget = false;
-            return text;
         }
 
         private static Sprite GetCircleButtonSprite()
@@ -1148,20 +787,51 @@ namespace StaticDrift.UI
             }
         }
 
+        private void OnDisable()
+        {
+            ReleaseAllTouchControlInput();
+        }
+
+        private void ReleaseAllTouchControlInput()
+        {
+            _rotateLeftHeld = false;
+            _rotateRightHeld = false;
+            _accelerateHeld = false;
+
+            if (_playerController == null)
+            {
+                TryBindPlayerReferences();
+            }
+
+            if (_playerController != null)
+            {
+                _playerController.SetRotateLeftHeld(false);
+                _playerController.SetRotateRightHeld(false);
+                _playerController.SetAccelerateHeld(false);
+            }
+
+            ResetControlVisual("RotateLeftButton");
+            ResetControlVisual("RotateRightButton");
+            ResetControlVisual("AccelerateButton");
+        }
+
         private void OnValidate()
         {
             if (_scoreText == null)
             {
                 _scoreText = FindTextByName("ScoreText");
             }
+
             if (_waveText == null)
             {
                 _waveText = FindTextByName("WaveText");
             }
+
             if (_buildText == null)
             {
                 _buildText = FindTextByName("BuildText");
             }
+
             if (_bossPanel == null)
             {
                 Transform boss = transform.Find("BossPanel");
@@ -1173,6 +843,7 @@ namespace StaticDrift.UI
                     {
                         _bossHpFill = fill.GetComponent<Image>();
                     }
+
                     Transform labelTransform = boss.Find("Label");
                     if (labelTransform != null)
                     {
@@ -1187,12 +858,55 @@ namespace StaticDrift.UI
                 if (playerHp != null)
                 {
                     _playerHpPanel = playerHp.gameObject;
-                    EnsurePlayerHpBarVisuals(playerHp);
+                    Transform track = playerHp.Find("Track");
+                    Transform fillTf = track != null ? track.Find("Fill") : null;
+                    if (fillTf != null)
+                    {
+                        _playerHpFill = fillTf.GetComponent<Image>();
+                        _playerHpFillRect = fillTf.GetComponent<RectTransform>();
+                    }
+
                     Transform labelTransform = playerHp.Find("Label");
                     if (labelTransform != null)
                     {
                         _playerHpText = labelTransform.GetComponent<TMP_Text>();
                     }
+                }
+            }
+
+            if (_pauseButton == null)
+            {
+                Transform p = transform.Find("PauseButton");
+                if (p != null)
+                {
+                    _pauseButton = p.GetComponent<Button>();
+                }
+            }
+
+            if (_rotateLeftButton == null)
+            {
+                Transform t = transform.Find("RotateLeftButton");
+                if (t != null)
+                {
+                    _rotateLeftButton = t.gameObject;
+                }
+            }
+
+            if (_rotateRightButton == null)
+            {
+                Transform t = transform.Find("RotateRightButton");
+                if (t != null)
+                {
+                    _rotateRightButton = t.gameObject;
+                }
+            }
+
+            if (_accelerateButton == null)
+            {
+                Transform t = transform.Find("AccelerateButton");
+                if (t != null)
+                {
+                    _accelerateButton = t.gameObject;
                 }
             }
         }
@@ -1253,100 +967,6 @@ namespace StaticDrift.UI
                     _playerController = playerGo.GetComponentInChildren<PlayerController>();
                 }
             }
-        }
-
-        private void EnsurePlayerHpBarVisuals(Transform panelTransform)
-        {
-            if (panelTransform == null)
-            {
-                return;
-            }
-
-            Image panelImage = panelTransform.GetComponent<Image>();
-            if (panelImage == null)
-            {
-                panelImage = panelTransform.gameObject.AddComponent<Image>();
-            }
-            panelImage.color = new Color(0.04f, 0.07f, 0.12f, 0.98f);
-            panelImage.raycastTarget = false;
-
-            Outline outline = panelTransform.GetComponent<Outline>();
-            if (outline == null)
-            {
-                outline = panelTransform.gameObject.AddComponent<Outline>();
-            }
-            outline.effectColor = new Color(0.7f, 0.9f, 1f, 0.9f);
-            outline.effectDistance = new Vector2(2f, -2f);
-            outline.useGraphicAlpha = false;
-
-            Transform track = panelTransform.Find("Track");
-            if (track == null)
-            {
-                track = panelTransform.Find("Fill");
-                if (track != null)
-                {
-                    track.name = "Track";
-                }
-            }
-
-            if (track == null)
-            {
-                GameObject trackGo = new GameObject("Track");
-                trackGo.transform.SetParent(panelTransform, false);
-                track = trackGo.transform;
-            }
-
-            RectTransform trackRect = track as RectTransform;
-            if (trackRect == null)
-            {
-                trackRect = track.gameObject.AddComponent<RectTransform>();
-            }
-            trackRect.anchorMin = Vector2.zero;
-            trackRect.anchorMax = Vector2.one;
-            trackRect.offsetMin = new Vector2(4f, 4f);
-            trackRect.offsetMax = new Vector2(-4f, -4f);
-            trackRect.pivot = new Vector2(0.5f, 0.5f);
-
-            Image trackImage = track.GetComponent<Image>();
-            if (trackImage == null)
-            {
-                trackImage = track.gameObject.AddComponent<Image>();
-            }
-            trackImage.type = Image.Type.Simple;
-            trackImage.color = new Color(0.09f, 0.15f, 0.22f, 1f);
-            trackImage.raycastTarget = false;
-
-            Transform fill = track.Find("Fill");
-            if (fill == null)
-            {
-                GameObject fillGo = new GameObject("Fill");
-                fillGo.transform.SetParent(track, false);
-                fill = fillGo.transform;
-            }
-
-            RectTransform fillRect = fill as RectTransform;
-            if (fillRect == null)
-            {
-                fillRect = fill.gameObject.AddComponent<RectTransform>();
-            }
-            fillRect.anchorMin = Vector2.zero;
-            fillRect.anchorMax = Vector2.one;
-            fillRect.offsetMin = Vector2.zero;
-            fillRect.offsetMax = Vector2.zero;
-            fillRect.pivot = new Vector2(0f, 0.5f);
-
-            Image fillImage = fill.GetComponent<Image>();
-            if (fillImage == null)
-            {
-                fillImage = fill.gameObject.AddComponent<Image>();
-            }
-            fillImage.type = Image.Type.Simple;
-            fillImage.fillAmount = 1f;
-            fillImage.color = new Color(0.2f, 0.78f, 0.42f, 0.95f);
-            fillImage.raycastTarget = false;
-
-            _playerHpFill = fillImage;
-            _playerHpFillRect = fillRect;
         }
     }
 

@@ -167,5 +167,25 @@ namespace StaticDrift.Player
                 _rigidbody2D.position = pos;
             }
         }
+
+        /// <summary>True when the ship is within <paramref name="bandWorldUnits"/> of an arena edge (before wrap).</summary>
+        public bool IsNearWrapEdgeBand(float bandWorldUnits)
+        {
+            if (_mainCamera == null || !_mainCamera.orthographic)
+            {
+                return false;
+            }
+
+            Vector3 camPos = _mainCamera.transform.position;
+            float halfHeight = _mainCamera.orthographicSize;
+            float halfWidth = halfHeight * _mainCamera.aspect;
+            float left = camPos.x - halfWidth;
+            float right = camPos.x + halfWidth;
+            float bottom = camPos.y - halfHeight;
+            float top = camPos.y + halfHeight;
+            Vector2 pos = _rigidbody2D.position;
+            float b = Mathf.Max(0.05f, bandWorldUnits);
+            return pos.x <= left + b || pos.x >= right - b || pos.y <= bottom + b || pos.y >= top - b;
+        }
     }
 }

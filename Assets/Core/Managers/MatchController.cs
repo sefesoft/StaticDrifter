@@ -12,6 +12,7 @@ using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using StaticDrift.Items;
 using StaticDrift.Cards;
+using StaticDrift.Achievements;
 using System.Collections;
 
 namespace StaticDrift.Managers
@@ -55,6 +56,8 @@ namespace StaticDrift.Managers
         private int _waveStartScore;
         private float _waveStartTime;
         private int _runScrap;
+        private bool _waveDamageTakenThisWave;
+        private readonly List<float> _chainAsteroidTimes = new List<float>(12);
         private BossShip _bossShip;
         private bool _isBossFight;
         private bool _isPaused;
@@ -170,6 +173,10 @@ namespace StaticDrift.Managers
             }
 
             Asteroid.AsteroidDestroyed += OnAsteroidDestroyed;
+            PlayerHealth.PlayerTookDamage += OnPlayerTookDamageForAchievements;
+            Enemy.HostileDestroyed += OnHostileDestroyedForAchievements;
+            _waveDamageTakenThisWave = false;
+            _chainAsteroidTimes.Clear();
         }
 
         private void EnsureTransitionTimings()
@@ -218,6 +225,8 @@ namespace StaticDrift.Managers
             _waveElapsedTime += Time.deltaTime;
             if (_waveElapsedTime >= _currentWaveDuration)
             {
+                float remainingOnClock = _currentWaveDuration - _waveElapsedTime;
+                NotifyTimedWaveAchievements(_currentWave, remainingOnClock);
                 if (ShouldStartBossFight(_currentWave))
                 {
                     StartBossFight();
@@ -238,6 +247,8 @@ namespace StaticDrift.Managers
         private void OnDestroy()
         {
             Asteroid.AsteroidDestroyed -= OnAsteroidDestroyed;
+            PlayerHealth.PlayerTookDamage -= OnPlayerTookDamageForAchievements;
+            Enemy.HostileDestroyed -= OnHostileDestroyedForAchievements;
             if (_bossShip != null)
             {
                 _bossShip.Defeated -= HandleBossDefeated;
@@ -246,6 +257,44 @@ namespace StaticDrift.Managers
             if (Instance == this)
             {
                 Instance = null;
+            }
+        }
+
+        private void OnPlayerTookDamageForAchievements()
+        {
+            _waveDamageTakenThisWave = true;
+        }
+
+        private static void OnHostileDestroyedForAchievements()
+        {
+            AchievementProgress.RecordHostileDestroyed();
+        }
+
+        private void NotifyTimedWaveAchievements(int completedWave, float remainingSecondsOnClock)
+        {
+            if (!_waveDamageTakenThisWave)
+            {
+                AchievementProgress.Unlock(AchievementId.CleanSector);
+            }
+
+            if (remainingSecondsOnClock <= 3f)
+            {
+                AchievementProgress.Unlock(AchievementId.CuttingClose);
+            }
+
+            if (completedWave >= 10)
+            {
+                AchievementProgress.Unlock(AchievementId.DriftSurvivor);
+            }
+
+            if (completedWave >= 15)
+            {
+                AchievementProgress.Unlock(AchievementId.DeepRun);
+            }
+
+            if (_waveSpawner != null && _waveSpawner.IsEliteWaveNumber(completedWave))
+            {
+                AchievementProgress.RecordEliteWaveSurvived();
             }
         }
 
@@ -403,6 +452,10 @@ namespace StaticDrift.Managers
             {
                 _score += 15;
             }
+
+            bool nearEdge = _playerController != null && _playerController.IsNearWrapEdgeBand(2.2f);
+            AchievementProgress.RecordAsteroidDestroyed(nearEdge);
+            AchievementProgress.TryUnlockChainReaction(Time.unscaledTime, _chainAsteroidTimes);
         }
 
         private void TriggerGameOver()
@@ -487,6 +540,7 @@ namespace StaticDrift.Managers
             Time.timeScale = 0f;
 
             List<int> topScores = SaveAndGetTopScores(_score);
+            AchievementProgress.OnGameOverScore(_score, topScores);
             int totalScrap = SaveAndGetTotalScrap(_runScrap);
             CreateGameOverOverlay(topScores, totalScrap);
 
@@ -551,6 +605,7 @@ namespace StaticDrift.Managers
             }
 
             ApplyRunModifiers();
+            _waveDamageTakenThisWave = false;
         }
 
         private bool HandlePauseToggleInput()
@@ -1052,12 +1107,13 @@ namespace StaticDrift.Managers
                 useMobilePauseLayout ? 40f : 30f,
                 TextAlignmentOptions.Center);
 
-            Button resumeButton = CreateButton(pauseMenuRoot.transform, "ResumeButton", "Resume", new Vector2(0.5f, 0.45f), () =>
+            Vector2 pauseBtnSize = useMobilePauseLayout ? new Vector2(320f, 80f) : new Vector2(260f, 72f);
+            Button resumeButton = CreateButton(pauseMenuRoot.transform, "ResumeButton", "Resume", new Vector2(0.5f, 0.505f), () =>
             {
                 AudioManager.EnsureExists().PlayUiConfirm();
                 ResumeFromPause();
             });
-            SetRectSize(resumeButton, useMobilePauseLayout ? new Vector2(320f, 108f) : new Vector2(250f, 92f));
+            SetRectSize(resumeButton, pauseBtnSize);
             ConfigureButtonText(
                 resumeButton,
                 useMobilePauseLayout ? 42f : 36f,
@@ -1078,11 +1134,63 @@ namespace StaticDrift.Managers
                 () => SetGameplayHudPauseButtonVisible(true),
                 out infoCloseButton);
 
-            infoButton = CreateButton(pauseMenuRoot.transform, "InfoFromPauseButton", "Help", new Vector2(0.5f, 0.23f), () =>
+            Button achievementsButton = null;
+            Button achievementsCloseButton = null;
+            TMP_Text achievementsBodyText;
+            GameObject achievementsWindow = CreatePauseAchievementsWindow(
+                panel.transform,
+                pauseMenuRoot,
+                pauseKeepAlive,
+                pausePointerGuard,
+                () => achievementsButton,
+                () => SetGameplayHudPauseButtonVisible(true),
+                out achievementsBodyText,
+                out achievementsCloseButton);
+
+            achievementsButton = CreateButton(pauseMenuRoot.transform, "AchievementsFromPauseButton", "Achievements", new Vector2(0.5f, 0.385f), () =>
+            {
+                AudioManager.EnsureExists().PlayUiConfirm();
+                AchievementListPanel.RefreshBodyText(achievementsBodyText);
+                SetGameplayHudPauseButtonVisible(false);
+                pauseMenuRoot.SetActive(false);
+                if (infoWindow != null)
+                {
+                    infoWindow.SetActive(false);
+                }
+
+                if (achievementsWindow != null)
+                {
+                    achievementsWindow.SetActive(true);
+                    achievementsWindow.transform.SetAsLastSibling();
+                }
+
+                if (achievementsCloseButton != null)
+                {
+                    SetSelectedButton(achievementsCloseButton);
+                    pauseKeepAlive.DefaultSelection = achievementsCloseButton.gameObject;
+                    pausePointerGuard.DefaultSelection = achievementsCloseButton.gameObject;
+                }
+            });
+            SetRectSize(achievementsButton, pauseBtnSize);
+            ConfigureButtonText(
+                achievementsButton,
+                useMobilePauseLayout ? 42f : 36f,
+                useMobilePauseLayout ? 26f : 18f,
+                useMobilePauseLayout ? 42f : 36f,
+                new Vector2(22f, 16f),
+                new Vector2(-22f, -14f),
+                useMobilePauseLayout ? -6f : -10f);
+
+            infoButton = CreateButton(pauseMenuRoot.transform, "InfoFromPauseButton", "Help", new Vector2(0.5f, 0.155f), () =>
             {
                 AudioManager.EnsureExists().PlayUiConfirm();
                 SetGameplayHudPauseButtonVisible(false);
                 pauseMenuRoot.SetActive(false);
+                if (achievementsWindow != null)
+                {
+                    achievementsWindow.SetActive(false);
+                }
+
                 if (infoWindow != null)
                 {
                     infoWindow.SetActive(true);
@@ -1095,7 +1203,7 @@ namespace StaticDrift.Managers
                     pausePointerGuard.DefaultSelection = infoCloseButton.gameObject;
                 }
             });
-            SetRectSize(infoButton, useMobilePauseLayout ? new Vector2(320f, 108f) : new Vector2(250f, 92f));
+            SetRectSize(infoButton, pauseBtnSize);
             ConfigureButtonText(
                 infoButton,
                 useMobilePauseLayout ? 42f : 36f,
@@ -1105,14 +1213,14 @@ namespace StaticDrift.Managers
                 new Vector2(-22f, -14f),
                 useMobilePauseLayout ? -6f : -10f);
 
-            Button retryButton = CreateButton(pauseMenuRoot.transform, "RetryFromPauseButton", "Retry", new Vector2(0.5f, 0.34f), () =>
+            Button retryButton = CreateButton(pauseMenuRoot.transform, "RetryFromPauseButton", "Retry", new Vector2(0.5f, 0.27f), () =>
             {
                 AudioManager.EnsureExists().PlayUiConfirm();
                 _isPaused = false;
                 Time.timeScale = 1f;
                 SceneManager.LoadScene("Gameplay");
             });
-            SetRectSize(retryButton, useMobilePauseLayout ? new Vector2(320f, 108f) : new Vector2(250f, 92f));
+            SetRectSize(retryButton, pauseBtnSize);
             ConfigureButtonText(
                 retryButton,
                 useMobilePauseLayout ? 42f : 36f,
@@ -1122,14 +1230,14 @@ namespace StaticDrift.Managers
                 new Vector2(-22f, -14f),
                 useMobilePauseLayout ? -6f : -10f);
 
-            Button titleButton = CreateButton(pauseMenuRoot.transform, "TitleFromPauseButton", "Exit to Title Screen", new Vector2(0.5f, 0.12f), () =>
+            Button titleButton = CreateButton(pauseMenuRoot.transform, "TitleFromPauseButton", "Exit to Title", new Vector2(0.5f, 0.045f), () =>
             {
                 AudioManager.EnsureExists().PlayUiConfirm();
                 _isPaused = false;
                 Time.timeScale = 1f;
                 SceneManager.LoadScene("TitleScreen");
             });
-            SetRectSize(titleButton, useMobilePauseLayout ? new Vector2(320f, 108f) : new Vector2(250f, 92f));
+            SetRectSize(titleButton, pauseBtnSize);
             ConfigureButtonText(
                 titleButton,
                 useMobilePauseLayout ? 42f : 36f,
@@ -1278,6 +1386,94 @@ namespace StaticDrift.Managers
 
             float f = Mathf.Min(1f, availW / Mathf.Max(1f, intendedSize.x), availH / Mathf.Max(1f, intendedSize.y));
             windowRt.localScale = new Vector3(f, f, 1f);
+        }
+
+        private static GameObject CreatePauseAchievementsWindow(
+            Transform parent,
+            GameObject pauseMenuRoot,
+            UiSelectionKeepAlive pauseKeepAlive,
+            MenuPanelPointerGuard pausePointerGuard,
+            System.Func<Button> reopenButtonProvider,
+            System.Action onAchievementsClosed,
+            out TMP_Text achievementsBodyText,
+            out Button closeButton)
+        {
+            bool useMobileLayout = UseMobileUpgradeLayout();
+            Vector2 intendedSize = useMobileLayout ? new Vector2(1500f, 1040f) : new Vector2(1180f, 900f);
+            RectTransform safeHost = CreatePauseHelpSafeAreaHost(parent);
+
+            GameObject window = new GameObject("PauseAchievementsWindow");
+            window.transform.SetParent(safeHost, false);
+            window.transform.SetAsLastSibling();
+            RectTransform windowRect = window.AddComponent<RectTransform>();
+            windowRect.anchorMin = new Vector2(0.5f, 0.5f);
+            windowRect.anchorMax = new Vector2(0.5f, 0.5f);
+            windowRect.pivot = new Vector2(0.5f, 0.5f);
+            windowRect.sizeDelta = intendedSize;
+            windowRect.localScale = Vector3.one;
+
+            Image windowImage = window.AddComponent<Image>();
+            windowImage.color = new Color(0.06f, 0.09f, 0.14f, 0.97f);
+            windowImage.raycastTarget = true;
+            Outline outline = window.AddComponent<Outline>();
+            outline.effectColor = new Color(0.65f, 0.86f, 1f, 0.45f);
+            outline.effectDistance = new Vector2(3f, -3f);
+            outline.useGraphicAlpha = false;
+
+            CreateGameOverLine(
+                window.transform,
+                "PauseAchievementsTitle",
+                "ACHIEVEMENTS",
+                new Vector2(0f, useMobileLayout ? 448f : 392f),
+                new Vector2(useMobileLayout ? 1200f : 900f, useMobileLayout ? 92f : 72f),
+                useMobileLayout ? 78f : 62f,
+                TextAlignmentOptions.Center);
+
+            closeButton = CreateButton(window.transform, "CloseAchievementsButton", "X", new Vector2(0.5f, 0.5f), () =>
+            {
+                AudioManager.EnsureExists().PlayUiConfirm();
+                window.SetActive(false);
+                if (pauseMenuRoot != null)
+                {
+                    pauseMenuRoot.SetActive(true);
+                }
+
+                onAchievementsClosed?.Invoke();
+                Button reopen = reopenButtonProvider != null ? reopenButtonProvider() : null;
+                if (reopen != null)
+                {
+                    SetSelectedButton(reopen);
+                    pauseKeepAlive.DefaultSelection = reopen.gameObject;
+                    pausePointerGuard.DefaultSelection = reopen.gameObject;
+                }
+            });
+            SetRectSize(closeButton, useMobileLayout ? new Vector2(100f, 100f) : new Vector2(88f, 88f));
+            RectTransform closeRt = closeButton.GetComponent<RectTransform>();
+            if (closeRt != null)
+            {
+                closeRt.anchorMin = new Vector2(1f, 1f);
+                closeRt.anchorMax = new Vector2(1f, 1f);
+                closeRt.pivot = new Vector2(1f, 1f);
+                float inset = useMobileLayout ? 14f : 12f;
+                closeRt.anchoredPosition = new Vector2(-inset, -inset);
+            }
+
+            ApplyPauseHelpCloseButtonStyle(closeButton, useMobileLayout);
+
+            AchievementListPanel.Layout scrollLayout = new AchievementListPanel.Layout(
+                new Vector2(0.02f, 0.045f),
+                new Vector2(0.98f, 0.855f),
+                Vector2.zero,
+                Vector2.zero);
+            float bodyFont = useMobileLayout ? 42f : 36f;
+            int descRich = useMobileLayout ? 34 : 30;
+            float sbw = useMobileLayout ? 44f : 38f;
+            AchievementListPanel.Style achStyle = new AchievementListPanel.Style(bodyFont, descRich, sbw);
+            achievementsBodyText = AchievementListPanel.CreateScrollingBody(window.transform, scrollLayout, achStyle);
+
+            ApplyPauseHelpWindowFitInsideHost(windowRect, safeHost, intendedSize);
+            window.SetActive(false);
+            return window;
         }
 
         private static GameObject CreatePauseInfoWindow(
@@ -2253,6 +2449,7 @@ namespace StaticDrift.Managers
                     }
 
                     ApplyRunModifiers();
+                    AchievementProgress.EvaluateRunUpgradeAchievements(_runUpgradeController);
                     int buttonCount = draftButtons.Count;
                     for (int b = 0; b < buttonCount; b++)
                     {
