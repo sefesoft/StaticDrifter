@@ -309,12 +309,16 @@ namespace StaticDrift.Player
                 return _itemAuraAdditiveMaterial;
             }
 
-            Shader shader = Shader.Find("Particles/Additive");
+            Shader shader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
+            if (shader == null)
+            {
+                shader = Shader.Find("Particles/Additive");
+            }
+
             if (shader == null)
             {
                 shader = Shader.Find("Legacy Shaders/Particles/Additive");
             }
-
             if (shader != null)
             {
                 _itemAuraAdditiveMaterial = new Material(shader);

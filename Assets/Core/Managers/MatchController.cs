@@ -35,6 +35,8 @@ namespace StaticDrift.Managers
         [SerializeField] private float _bossHealthPerCycle = 90f;
         [SerializeField] private RunUpgradeController _runUpgradeController;
         [SerializeField] private ItemSpawner _itemSpawner;
+        [Tooltip("Boss1 prefab (BossShip + physics + sprite). Duplicated for future bosses.")]
+        [SerializeField] private GameObject _bossShipPrefab;
 
         private float _matchTime;
         private bool _running;
@@ -110,9 +112,14 @@ namespace StaticDrift.Managers
         public bool IsGameOver => _isGameOver;
         public bool IsBossFight => _isBossFight;
         public bool IsPaused => _isPaused;
-        public float BossHealthNormalized => _bossShip != null && _bossShip.IsActiveBoss ? _bossShip.Health01 : 0f;
-        public int BossCurrentHealth => _bossShip != null && _bossShip.IsActiveBoss ? Mathf.CeilToInt(_bossShip.CurrentHealth) : 0;
-        public int BossMaxHealth => _bossShip != null && _bossShip.IsActiveBoss ? Mathf.CeilToInt(_bossShip.MaxHealth) : 0;
+        public float BossHealthNormalized =>
+            _bossShip != null && _isBossFight
+                ? Mathf.Clamp01(_bossShip.CurrentHealth / Mathf.Max(1f, _bossShip.MaxHealth))
+                : 0f;
+        public int BossCurrentHealth =>
+            _bossShip != null && _isBossFight ? Mathf.CeilToInt(_bossShip.CurrentHealth) : 0;
+        public int BossMaxHealth =>
+            _bossShip != null && _isBossFight ? Mathf.CeilToInt(_bossShip.MaxHealth) : 0;
         public string BuildSummary => _runUpgradeController != null ? _runUpgradeController.GetSynergySummary() : "V0 K0 T0 S0";
 
         public static MatchController Instance { get; private set; }
@@ -222,18 +229,15 @@ namespace StaticDrift.Managers
                 return;
             }
 
+            if (TryCheatFinishCurrentTimedWave())
+            {
+                return;
+            }
+
             _waveElapsedTime += Time.deltaTime;
             if (_waveElapsedTime >= _currentWaveDuration)
             {
-                NotifyTimedWaveAchievements(_currentWave);
-                if (ShouldStartBossFight(_currentWave))
-                {
-                    StartBossFight();
-                }
-                else
-                {
-                    BeginWaveInterlude(_currentWave + 1, -1f);
-                }
+                CompleteTimedWaveNormally();
                 return;
             }
 
@@ -267,6 +271,49 @@ namespace StaticDrift.Managers
         private static void OnHostileDestroyedForAchievements()
         {
             AchievementProgress.RecordHostileDestroyed();
+        }
+
+        /// <summary>Same outcome as the wave timer hitting zero (boss fight or interlude).</summary>
+        private void CompleteTimedWaveNormally()
+        {
+            NotifyTimedWaveAchievements(_currentWave);
+            if (ShouldStartBossFight(_currentWave))
+            {
+                StartBossFight();
+            }
+            else
+            {
+                BeginWaveInterlude(_currentWave + 1, -1f);
+            }
+        }
+
+        /// <summary>Editor / development builds only: P finishes the current timed wave.</summary>
+        private bool TryCheatFinishCurrentTimedWave()
+        {
+            if (!Application.isEditor && !Debug.isDebugBuild)
+            {
+                return false;
+            }
+
+            if (_isInterlude || _isGameOver || _isWaveTransitionAnimating)
+            {
+                return false;
+            }
+
+            if (_currentWaveDuration <= 0.01f)
+            {
+                return false;
+            }
+
+            Keyboard keyboard = Keyboard.current;
+            if (keyboard == null || !keyboard.pKey.wasPressedThisFrame)
+            {
+                return false;
+            }
+
+            _waveElapsedTime = _currentWaveDuration;
+            CompleteTimedWaveNormally();
+            return true;
         }
 
         private void NotifyTimedWaveAchievements(int completedWave)
@@ -343,7 +390,21 @@ namespace StaticDrift.Managers
                 return;
             }
 
-            _bossShip = FindFirstObjectByType<BossShip>();
+            if (_bossShipPrefab != null)
+            {
+                GameObject instance = Instantiate(_bossShipPrefab);
+                _bossShip = instance.GetComponent<BossShip>();
+                if (_bossShip == null)
+                {
+                    Destroy(instance);
+                }
+            }
+
+            if (_bossShip == null)
+            {
+                _bossShip = FindFirstObjectByType<BossShip>();
+            }
+
             if (_bossShip == null)
             {
                 GameObject go = new GameObject("BossShip");
@@ -847,12 +908,16 @@ namespace StaticDrift.Managers
                 return;
             }
 
-            Shader shader = Shader.Find("Particles/Additive");
+            Shader shader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
+            if (shader == null)
+            {
+                shader = Shader.Find("Particles/Additive");
+            }
+
             if (shader == null)
             {
                 shader = Shader.Find("Legacy Shaders/Particles/Additive");
             }
-
             if (shader != null)
             {
                 material = new Material(shader);
@@ -2368,10 +2433,12 @@ namespace StaticDrift.Managers
             }
 
             float yTitle = useMobileLayout ? 0.82f : 0.79f;
-            float yStats = useMobileLayout ? 0.605f : 0.575f;
-            float yBuild = useMobileLayout ? 0.455f : 0.435f;
-            float yDraftTitle = useMobileLayout ? 0.335f : 0.325f;
-            float yDraftCards = useMobileLayout ? 0.255f : 0.265f;
+            // Middle block (stats → upgrades) is shifted up so the draft row clears the Continue button.
+            float yStats = useMobileLayout ? 0.68f : 0.65f;
+            float yBuild = useMobileLayout ? 0.525f : 0.505f;
+            // Draft title sits above the cards; keep enough gap so the title block (tall TMP rect) does not overlap card tops.
+            float yDraftTitle = useMobileLayout ? 0.43f : 0.42f;
+            float yDraftCards = useMobileLayout ? 0.275f : 0.285f;
             float yContinue = useMobileLayout ? 0.055f : 0.065f;
 
             TMP_Text waveCompleteText = CreateText(panel.transform, "WaveComplete", waveTitle, new Vector2(0.5f, yTitle), useMobileLayout ? 84f : 72f, true);
@@ -2391,7 +2458,7 @@ namespace StaticDrift.Managers
                 ? _runUpgradeController.BuildDraftOptions(3)
                 : new RunUpgradeController.UpgradeOption[0];
 
-            TMP_Text draftTitleText = CreateText(panel.transform, "DraftTitle", "Choose 1 Upgrade", new Vector2(0.5f, yDraftTitle), useMobileLayout ? 50f : 40f, true);
+            TMP_Text draftTitleText = CreateText(panel.transform, "DraftTitle", "Choose an upgrade (optional)", new Vector2(0.5f, yDraftTitle), useMobileLayout ? 50f : 40f, true);
             SetRectSize(draftTitleText, useMobileLayout ? new Vector2(1200f, 72f) : new Vector2(900f, 64f));
             bool picked = false;
             Button continueButton = CreateButton(panel.transform, "ContinueButton", "Continue", new Vector2(0.5f, yContinue), () =>
@@ -2409,7 +2476,6 @@ namespace StaticDrift.Managers
                 new Vector2(22f, 16f),
                 new Vector2(-22f, -14f),
                 useMobileLayout ? -6f : -10f);
-            continueButton.interactable = false;
 
             if (draft.Length == 0)
             {
@@ -2425,7 +2491,6 @@ namespace StaticDrift.Managers
 
             float[] xPositions = new float[] { 0.24f, 0.5f, 0.76f };
             int optionCount = draft.Length;
-            Button firstDraftButton = null;
             List<Button> draftButtons = new List<Button>(optionCount);
             for (int i = 0; i < optionCount; i++)
             {
@@ -2475,7 +2540,6 @@ namespace StaticDrift.Managers
                         }
                     }
 
-                    continueButton.interactable = true;
                     AudioManager.EnsureExists().PlayUiConfirm();
                     SetSelectedButton(continueButton);
                     interludeKeepAlive.DefaultSelection = continueButton.gameObject;
@@ -2497,16 +2561,11 @@ namespace StaticDrift.Managers
                     useMobileLayout ? -2f : -6f);
                 AddDraftUpgradeButtonIcon(pickButton, option.Tag, useMobileLayout);
                 draftButtons.Add(pickButton);
-
-                if (firstDraftButton == null)
-                {
-                    firstDraftButton = pickButton;
-                }
             }
-            Button defaultBtn = firstDraftButton != null ? firstDraftButton : continueButton;
-            SetSelectedButton(defaultBtn);
-            interludeKeepAlive.DefaultSelection = defaultBtn != null ? defaultBtn.gameObject : null;
-            interludePointerGuard.DefaultSelection = defaultBtn != null ? defaultBtn.gameObject : null;
+
+            SetSelectedButton(continueButton);
+            interludeKeepAlive.DefaultSelection = continueButton.gameObject;
+            interludePointerGuard.DefaultSelection = continueButton.gameObject;
         }
 
         private static void HighlightChosenDraftButton(Button button)

@@ -42,6 +42,7 @@ namespace StaticDrift.Editor
                 LoadoutSlotHudEntry[] slots = EnsureLoadoutSlots(buildRow);
                 GameObject bossPanel = EnsureBossPanel(tr);
                 Image bossFill = bossPanel.transform.Find("Fill")?.GetComponent<Image>();
+                RectTransform bossFillRect = bossFill != null ? bossFill.rectTransform : null;
                 TMP_Text bossLabel = bossPanel.transform.Find("Label")?.GetComponent<TMP_Text>();
                 GameObject hpPanel = EnsurePlayerHpPanel(tr);
                 Transform hpTrack = hpPanel.transform.Find("Track");
@@ -76,6 +77,7 @@ namespace StaticDrift.Editor
 
                 so.FindProperty("_bossPanel").objectReferenceValue = bossPanel;
                 so.FindProperty("_bossHpFill").objectReferenceValue = bossFill;
+                so.FindProperty("_bossHpFillRect").objectReferenceValue = bossFillRect;
                 so.FindProperty("_bossHpText").objectReferenceValue = bossLabel;
                 so.FindProperty("_playerHpPanel").objectReferenceValue = hpPanel;
                 so.FindProperty("_playerHpFill").objectReferenceValue = hpFill;
@@ -380,8 +382,8 @@ namespace StaticDrift.Editor
             GameObject panel = new GameObject("BossPanel", typeof(RectTransform));
             panel.transform.SetParent(root, false);
             RectTransform rect = panel.GetComponent<RectTransform>();
-            rect.anchorMin = new Vector2(0.5f, 0.885f);
-            rect.anchorMax = new Vector2(0.5f, 0.885f);
+            rect.anchorMin = new Vector2(0.5f, 0.82f);
+            rect.anchorMax = new Vector2(0.5f, 0.82f);
             rect.pivot = new Vector2(0.5f, 0.5f);
             rect.sizeDelta = new Vector2(720f, 44f);
 
@@ -395,12 +397,12 @@ namespace StaticDrift.Editor
             fillRect.anchorMax = new Vector2(1f, 1f);
             fillRect.offsetMin = new Vector2(4f, 4f);
             fillRect.offsetMax = new Vector2(-4f, -4f);
+            fillRect.pivot = new Vector2(0f, 0.5f);
             Image fillImage = fillGo.AddComponent<Image>();
-            fillImage.type = Image.Type.Filled;
-            fillImage.fillMethod = Image.FillMethod.Horizontal;
-            fillImage.fillOrigin = 0;
+            fillImage.type = Image.Type.Simple;
             fillImage.fillAmount = 1f;
             fillImage.color = new Color(0.92f, 0.24f, 0.18f, 0.95f);
+            fillImage.raycastTarget = false;
 
             GameObject labelGo = new GameObject("Label", typeof(RectTransform));
             labelGo.transform.SetParent(panel.transform, false);

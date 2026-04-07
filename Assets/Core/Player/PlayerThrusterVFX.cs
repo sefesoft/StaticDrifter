@@ -63,7 +63,8 @@ namespace StaticDrift.Player
             bool wantOn = _forceActive || _controller.IsAccelerating;
             float ramp = wantOn ? _rampUpSeconds : _rampDownSeconds;
             float rate = 1f / Mathf.Max(0.02f, ramp);
-            _blend = Mathf.MoveTowards(_blend, wantOn ? 1f : 0f, Time.deltaTime * rate);
+            // Wave interlude / hyperspace runs at Time.timeScale == 0; ramp must use unscaled delta.
+            _blend = Mathf.MoveTowards(_blend, wantOn ? 1f : 0f, Time.unscaledDeltaTime * rate);
 
             if (_blend < 0.002f)
             {
@@ -74,7 +75,7 @@ namespace StaticDrift.Player
             SetRenderersVisible(true);
 
             float envelope = Mathf.SmoothStep(0f, 1f, _blend);
-            float t = Time.time;
+            float t = Time.unscaledTime;
             float flicker = 0.68f + 0.32f * Mathf.Abs(Mathf.Sin(t * _flickerSpeed));
             float flash = 0.82f + 0.18f * Mathf.Sin(t * _flashSpeed);
             float combined = flicker * flash * Mathf.Max(0.5f, _manualIntensity);

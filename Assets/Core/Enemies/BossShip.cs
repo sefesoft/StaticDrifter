@@ -14,9 +14,10 @@ namespace StaticDrift.Enemies
         [SerializeField] private float _orbitAmount = 1.7f;
         [SerializeField] private float _contactDamage = 12f;
         [SerializeField] private float _contactInterval = 0.45f;
+        [Tooltip("If set (e.g. on a prefab), used instead of Resources. Otherwise loads Resources/Gameplay/Boss1.")]
+        [SerializeField] private Sprite _bossSpriteOverride;
 
         private Rigidbody2D _rigidbody2D;
-        private CircleCollider2D _collider2D;
         private SpriteRenderer _spriteRenderer;
         private Transform _target;
         private float _maxHealth;
@@ -24,7 +25,7 @@ namespace StaticDrift.Enemies
         private float _nextContactTime;
         private float _aliveTime;
         private bool _active;
-        private static Sprite _bossSprite;
+        private static Sprite _proceduralBossSprite;
 
         public float MaxHealth => _maxHealth;
         public float CurrentHealth => _currentHealth;
@@ -35,19 +36,18 @@ namespace StaticDrift.Enemies
         private void Awake()
         {
             _rigidbody2D = GetComponent<Rigidbody2D>();
-            _collider2D = GetComponent<CircleCollider2D>();
             _spriteRenderer = GetComponent<SpriteRenderer>();
 
             _rigidbody2D.gravityScale = 0f;
             _rigidbody2D.bodyType = RigidbodyType2D.Kinematic;
             _rigidbody2D.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
-            _collider2D.isTrigger = true;
-            _collider2D.radius = 0.9f;
 
-            _spriteRenderer.sprite = GetBossSprite();
-            _spriteRenderer.color = new Color(0.9f, 0.45f, 0.3f, 1f);
+            Sprite visual = ResolveBossSprite();
+            _spriteRenderer.sprite = visual;
+            _spriteRenderer.color = visual != null && visual == _proceduralBossSprite
+                ? new Color(0.9f, 0.45f, 0.3f, 1f)
+                : Color.white;
             _spriteRenderer.sortingOrder = 8;
-            transform.localScale = new Vector3(2.6f, 2.6f, 1f);
             gameObject.SetActive(false);
         }
 
@@ -155,11 +155,27 @@ namespace StaticDrift.Enemies
             _nextContactTime = now + _contactInterval;
         }
 
-        private static Sprite GetBossSprite()
+        private Sprite ResolveBossSprite()
         {
-            if (_bossSprite != null)
+            if (_bossSpriteOverride != null)
             {
-                return _bossSprite;
+                return _bossSpriteOverride;
+            }
+
+            Sprite loaded = Resources.Load<Sprite>("Gameplay/Boss1");
+            if (loaded != null)
+            {
+                return loaded;
+            }
+
+            return GetProceduralBossSprite();
+        }
+
+        private static Sprite GetProceduralBossSprite()
+        {
+            if (_proceduralBossSprite != null)
+            {
+                return _proceduralBossSprite;
             }
 
             const int size = 128;
@@ -188,8 +204,8 @@ namespace StaticDrift.Enemies
             }
 
             tex.Apply();
-            _bossSprite = Sprite.Create(tex, new Rect(0f, 0f, size, size), new Vector2(0.5f, 0.5f), 100f);
-            return _bossSprite;
+            _proceduralBossSprite = Sprite.Create(tex, new Rect(0f, 0f, size, size), new Vector2(0.5f, 0.5f), 100f);
+            return _proceduralBossSprite;
         }
     }
 }

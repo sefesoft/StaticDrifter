@@ -34,6 +34,7 @@ namespace StaticDrift.UI
         [SerializeField] private LoadoutSlotHudEntry[] _loadoutSlots;
         [SerializeField] private GameObject _bossPanel;
         [SerializeField] private Image _bossHpFill;
+        [SerializeField] private RectTransform _bossHpFillRect;
         [SerializeField] private TMP_Text _bossHpText;
         [SerializeField] private GameObject _playerHpPanel;
         [SerializeField] private Image _playerHpFill;
@@ -66,6 +67,7 @@ namespace StaticDrift.UI
             TryBindPlayerReferences();
             EnsureEventSystem();
             CachePlayerHpFillRectIfNeeded();
+            CacheBossHpFillRectIfNeeded();
             LogMissingHudReferences();
             if (_createTouchControls)
             {
@@ -98,6 +100,14 @@ namespace StaticDrift.UI
             if (_playerHpFillRect == null && _playerHpFill != null)
             {
                 _playerHpFillRect = _playerHpFill.rectTransform;
+            }
+        }
+
+        private void CacheBossHpFillRectIfNeeded()
+        {
+            if (_bossHpFillRect == null && _bossHpFill != null)
+            {
+                _bossHpFillRect = _bossHpFill.rectTransform;
             }
         }
 
@@ -241,9 +251,16 @@ namespace StaticDrift.UI
 
                 if (showBoss)
                 {
+                    float bossHp = MatchController.Instance.BossHealthNormalized;
                     if (_bossHpFill != null)
                     {
-                        _bossHpFill.fillAmount = MatchController.Instance.BossHealthNormalized;
+                        _bossHpFill.fillAmount = bossHp;
+                    }
+
+                    if (_bossHpFillRect != null)
+                    {
+                        _bossHpFillRect.anchorMin = new Vector2(0f, 0f);
+                        _bossHpFillRect.anchorMax = new Vector2(bossHp, 1f);
                     }
 
                     if (_bossHpText != null)
@@ -842,6 +859,7 @@ namespace StaticDrift.UI
                     if (fill != null)
                     {
                         _bossHpFill = fill.GetComponent<Image>();
+                        _bossHpFillRect = fill.GetComponent<RectTransform>();
                     }
 
                     Transform labelTransform = boss.Find("Label");
