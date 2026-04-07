@@ -9,7 +9,7 @@ namespace StaticDrift.Enemies
     [RequireComponent(typeof(Rigidbody2D))]
     public class Asteroid : MonoBehaviour, IDamageable
     {
-        public static event Action<AsteroidSize> AsteroidDestroyed;
+        public static event Action<AsteroidSize, AsteroidKind> AsteroidDestroyed;
 
         public enum AsteroidSize
         {
@@ -18,17 +18,29 @@ namespace StaticDrift.Enemies
             Small
         }
 
+        public enum AsteroidKind
+        {
+            Rock,
+            Ice,
+            Obsidian,
+            Copper
+        }
+
         private ObjectPooler _pooler;
         private EnemyWaveSpawner _spawner;
         private Rigidbody2D _rigidbody2D;
         private SpriteRenderer _spriteRenderer;
         private CircleCollider2D _circleCollider2D;
         private AsteroidSize _size;
+        private AsteroidKind _kind;
         private float _health;
         private float _screenWrapMargin;
         private float _nextPlayerCollisionTime;
         private Vector2 _baseVelocity;
         private float _lastSpeedMultiplier = 1f;
+
+        /// <summary>Multiplies incoming projectile damage so obsidian takes noticeably more hits (ship collision chip uses <see cref="ApplyDamage"/> with resist skipped).</summary>
+        private const float ObsidianProjectileDamageTakenMultiplier = 0.52f;
 
         private void Awake()
         {
@@ -51,9 +63,13 @@ namespace StaticDrift.Enemies
             _rigidbody2D.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
         }
 
+        public AsteroidKind Kind => _kind;
+
         public void Initialize(
             AsteroidSize size,
+            AsteroidKind kind,
             float health,
+            Sprite visualSprite,
             float screenWrapMargin,
             Vector2 velocity,
             float angularVelocity,
@@ -62,13 +78,17 @@ namespace StaticDrift.Enemies
             EnemyWaveSpawner spawner)
         {
             _size = size;
+            _kind = kind;
             _health = health;
             _screenWrapMargin = screenWrapMargin;
             _pooler = pooler;
             _spawner = spawner;
 
-            transform.localScale = visualScale;
-            ApplySizeVisual();
+            // Spawner often uses (x, y, z) with z = 1 while prefabs have "Constrain Proportions" on; Unity then
+            // rejects or locks scale. Use X as the size and apply uniform XYZ so Inspector Small/Medium/Large Scale works.
+            float uniform = Mathf.Max(0.01f, visualScale.x);
+            transform.localScale = new Vector3(uniform, uniform, uniform);
+            ApplyVisualSprite(visualSprite);
             MatchColliderToSprite();
             _baseVelocity = velocity;
             _lastSpeedMultiplier = PlayerPowerupController.GlobalEnemySpeedMultiplier;
@@ -91,9 +111,19 @@ namespace StaticDrift.Enemies
 
         public void TakeDamage(float amount)
         {
+            ApplyDamage(amount, applyObsidianProjectileResist: true);
+        }
+
+        private void ApplyDamage(float amount, bool applyObsidianProjectileResist)
+        {
             if (amount <= 0f)
             {
                 return;
+            }
+
+            if (applyObsidianProjectileResist && _kind == AsteroidKind.Obsidian)
+            {
+                amount *= ObsidianProjectileDamageTakenMultiplier;
             }
 
             _health -= amount;
@@ -105,10 +135,10 @@ namespace StaticDrift.Enemies
 
             if (_spawner != null)
             {
-                _spawner.HandleAsteroidDestroyed(_size, transform.position, _rigidbody2D.linearVelocity);
+                _spawner.HandleAsteroidDestroyed(_size, transform.position, _rigidbody2D.linearVelocity, _kind);
             }
 
-            AsteroidDestroyed?.Invoke(_size);
+            AsteroidDestroyed?.Invoke(_size, _kind);
             AudioManager.EnsureExists().PlayAsteroidBreak();
 
             Despawn();
@@ -174,12 +204,14 @@ namespace StaticDrift.Enemies
             }
         }
 
-        private void ApplySizeVisual()
+        private void ApplyVisualSprite(Sprite sprite)
         {
-            if (_spriteRenderer == null)
+            if (_spriteRenderer == null || sprite == null)
             {
                 return;
             }
+
+            _spriteRenderer.sprite = sprite;
         }
 
         private void MatchColliderToSprite()
@@ -249,26 +281,59 @@ namespace StaticDrift.Enemies
                 playerBody.AddForce(pushDir * GetPushImpulse(), ForceMode2D.Impulse);
             }
 
-            health.TakeDamage(GetCollisionDamage());
+            float dmg = GetCollisionDamage();
+            health.TakeDamage(dmg);
+
+            if (_kind == AsteroidKind.Ice)
+            {
+                ApplyIceFreeze(health);
+            }
+
             _nextPlayerCollisionTime = now + 0.2f;
 
-            // Collision with the ship also counts as an asteroid hit.
-            TakeDamage(1f);
+            // Collision with the ship also counts as an asteroid hit (no obsidian projectile resist on this chip).
+            ApplyDamage(1f, applyObsidianProjectileResist: false);
+        }
+
+        private void ApplyIceFreeze(PlayerHealth health)
+        {
+            if (health == null)
+            {
+                return;
+            }
+
+            GameObject root = health.gameObject;
+            PlayerFreezeController freeze = root.GetComponent<PlayerFreezeController>();
+            if (freeze == null)
+            {
+                freeze = root.AddComponent<PlayerFreezeController>();
+            }
+
+            freeze.ApplyFreeze();
         }
 
         private float GetCollisionDamage()
         {
+            float baseDamage;
             if (_size == AsteroidSize.Large)
             {
-                return 5f;
+                baseDamage = 5f;
             }
-
-            if (_size == AsteroidSize.Medium)
+            else if (_size == AsteroidSize.Medium)
             {
-                return 3f;
+                baseDamage = 3f;
+            }
+            else
+            {
+                baseDamage = 1f;
             }
 
-            return 1f;
+            if (_kind == AsteroidKind.Obsidian)
+            {
+                return baseDamage * 1.55f;
+            }
+
+            return baseDamage;
         }
 
         private float GetPushImpulse()

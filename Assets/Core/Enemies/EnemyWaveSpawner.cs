@@ -5,6 +5,10 @@ using StaticDrift.Enemies.Data;
 
 namespace StaticDrift.Enemies
 {
+    /// <summary>
+    /// Single spawn loop: each timer tick spawns at most one thing — either a drone (random roll) or one asteroid.
+    /// Asteroid kind (rock/ice/etc.) is picked inside that one spawn and does not add parallel spawners or extra ticks.
+    /// </summary>
     public class EnemyWaveSpawner : MonoBehaviour
     {
         [System.Serializable]
@@ -16,14 +20,26 @@ namespace StaticDrift.Enemies
         }
 
         [System.Serializable]
+        public class AsteroidKindSprites
+        {
+            public Sprite Rock;
+            public Sprite Ice;
+            public Sprite Obsidian;
+            public Sprite Copper;
+        }
+
+        [System.Serializable]
         public class AsteroidStats
         {
             public float LargeHealth = 3f;
             public float MediumHealth = 2f;
             public float SmallHealth = 1f;
-            public Vector3 LargeScale = new Vector3(3.4f, 3.4f, 1f);
-            public Vector3 MediumScale = new Vector3(2.2f, 2.2f, 1f);
-            public Vector3 SmallScale = new Vector3(1.4f, 1.4f, 1f);
+            [Tooltip("Asteroid.Initialize uses X as uniform scale (sets X=Y=Z). Z is ignored; edit X only.")]
+            public Vector3 LargeScale = new Vector3(3.4f, 3.4f, 3.4f);
+            [Tooltip("Asteroid.Initialize uses X as uniform scale (sets X=Y=Z). Z is ignored; edit X only.")]
+            public Vector3 MediumScale = new Vector3(1.76f, 1.76f, 1.76f);
+            [Tooltip("Asteroid.Initialize uses X as uniform scale (sets X=Y=Z). Z is ignored; edit X only.")]
+            public Vector3 SmallScale = new Vector3(0.784f, 0.784f, 0.784f);
             public float LargeSpinMin = 12f;
             public float LargeSpinMax = 38f;
             public float MediumSpinMin = 35f;
@@ -44,7 +60,7 @@ namespace StaticDrift.Enemies
         [SerializeField] private Camera _camera;
         [SerializeField] private AsteroidPools _asteroidPools = new AsteroidPools();
         [SerializeField] private AsteroidStats _asteroidStats = new AsteroidStats();
-        [SerializeField] private float _spawnInterval = 2.2f;
+        [SerializeField] private float _spawnInterval = 2.85f;
         [SerializeField] private float _spawnEdgeMargin = 1f;
         [SerializeField] private float _screenWrapMargin = 0.8f;
         [SerializeField] private float _minSpeed = 1.8f;
@@ -52,12 +68,13 @@ namespace StaticDrift.Enemies
         [SerializeField] private float _spawnWeightLarge = 0.45f;
         [SerializeField] private float _spawnWeightMedium = 0.35f;
         [SerializeField] private float _spawnWeightSmall = 0.20f;
-        [SerializeField] private float _minSpawnInterval = 0.28f;
+        [SerializeField] private float _minSpawnInterval = 0.4f;
         [SerializeField] private List<DroneSpawnType> _droneSpawnTypes = new List<DroneSpawnType>();
         [SerializeField] private float _droneChancePerWave = 0.02f;
         [SerializeField] private int _eliteWaveEvery = 4;
         [SerializeField] private float _eliteHealthMultiplier = 2.1f;
-        [SerializeField] private float _eliteSpawnIntervalMultiplier = 0.86f;
+        [Tooltip("Elite waves multiply spawn interval by this (closer to 1 = less extra spawn pressure).")]
+        [SerializeField] private float _eliteSpawnIntervalMultiplier = 0.92f;
         [SerializeField] private float _waveOneSpawnIntervalMultiplier = 1.7f;
         [SerializeField] private float _waveOneSpeedMultiplier = 0.78f;
         [SerializeField] private bool _disableDronesOnWaveOne = true;
@@ -67,6 +84,18 @@ namespace StaticDrift.Enemies
         [SerializeField] private float _earlyWaveLargeWeightMultiplier = 0.75f;
         [SerializeField] private float _earlyWaveMediumWeightMultiplier = 0.9f;
         [SerializeField] private float _earlyWaveSmallWeightMultiplier = 1.25f;
+        [Header("Asteroid kinds")]
+        [Tooltip("Visual/stats only. Spawn rate is still one asteroid per tick above; there is no separate spawner per kind.")]
+        [SerializeField] private AsteroidKindSprites _kindSprites;
+        [SerializeField] private float _obsidianHealthMultiplier = 5.5f;
+        [SerializeField] private float _copperHealthMultiplier = 1.65f;
+        [Tooltip("Per wave after 1, added chance (capped) to spawn Ice/Obsidian/Copper instead of Rock.")]
+        [SerializeField] private float _specialAsteroidChancePerWave = 0.04f;
+        [SerializeField] private float _specialAsteroidMaxChance = 0.38f;
+
+        [Header("Spawn pacing")]
+        [Tooltip("Per wave, base spawn interval is multiplied by this^waveIndex. Closer to 1 = slower ramp (fewer asteroids in late waves).")]
+        [SerializeField] [Range(0.88f, 1f)] private float _spawnIntervalDecayPerWave = 0.965f;
 
         private float _spawnTimer;
         private float _effectiveSpawnInterval;
@@ -110,6 +139,43 @@ namespace StaticDrift.Enemies
             _effectiveMinSpeed = _minSpeed;
             _effectiveMaxSpeed = _maxSpeed;
             _effectiveDroneChance = 0.1f;
+
+            EnsureKindSprites();
+        }
+
+        /// <summary>Inspector: right‑click the component → use this if scales/health never match code changes (scene overrides script defaults).</summary>
+        [ContextMenu("Reset Asteroid Stats To Script Defaults")]
+        private void ContextResetAsteroidStatsToScriptDefaults()
+        {
+            _asteroidStats = new AsteroidStats();
+        }
+
+        private void EnsureKindSprites()
+        {
+            if (_kindSprites == null)
+            {
+                _kindSprites = new AsteroidKindSprites();
+            }
+
+            if (_kindSprites.Rock == null)
+            {
+                _kindSprites.Rock = Resources.Load<Sprite>("Gameplay/Asteroids/AsteroidRock");
+            }
+
+            if (_kindSprites.Ice == null)
+            {
+                _kindSprites.Ice = Resources.Load<Sprite>("Gameplay/Asteroids/AsteroidIce");
+            }
+
+            if (_kindSprites.Obsidian == null)
+            {
+                _kindSprites.Obsidian = Resources.Load<Sprite>("Gameplay/Asteroids/AsteroidObsidian");
+            }
+
+            if (_kindSprites.Copper == null)
+            {
+                _kindSprites.Copper = Resources.Load<Sprite>("Gameplay/Asteroids/AsteroidCopper");
+            }
         }
 
         private void Update()
@@ -179,7 +245,7 @@ namespace StaticDrift.Enemies
             _configuredWaveNumber = wave;
             float progress = wave - 1;
 
-            float interval = _spawnInterval * Mathf.Pow(0.92f, progress);
+            float interval = _spawnInterval * Mathf.Pow(_spawnIntervalDecayPerWave, progress);
             _effectiveSpawnInterval = Mathf.Max(_minSpawnInterval, interval);
 
             _effectiveMinSpeed = _minSpeed + (0.18f * progress);
@@ -204,33 +270,34 @@ namespace StaticDrift.Enemies
             }
         }
 
-        public void HandleAsteroidDestroyed(Asteroid.AsteroidSize destroyedSize, Vector2 origin, Vector2 parentVelocity)
+        public void HandleAsteroidDestroyed(Asteroid.AsteroidSize destroyedSize, Vector2 origin, Vector2 parentVelocity, Asteroid.AsteroidKind kind)
         {
             if (destroyedSize == Asteroid.AsteroidSize.Large)
             {
-                SpawnSplitChildren(Asteroid.AsteroidSize.Medium, 2, origin, parentVelocity);
+                SpawnSplitChildren(Asteroid.AsteroidSize.Medium, 2, origin, parentVelocity, kind);
                 return;
             }
 
             if (destroyedSize == Asteroid.AsteroidSize.Medium)
             {
-                SpawnSplitChildren(Asteroid.AsteroidSize.Small, 3, origin, parentVelocity);
+                SpawnSplitChildren(Asteroid.AsteroidSize.Small, 3, origin, parentVelocity, kind);
             }
         }
 
-        private void SpawnSplitChildren(Asteroid.AsteroidSize childSize, int count, Vector2 origin, Vector2 parentVelocity)
+        private void SpawnSplitChildren(Asteroid.AsteroidSize childSize, int count, Vector2 origin, Vector2 parentVelocity, Asteroid.AsteroidKind kind)
         {
             for (int i = 0; i < count; i++)
             {
                 Vector2 jitter = Random.insideUnitCircle * 0.35f;
                 Vector2 spawnPos = origin + jitter;
-                SpawnAsteroid(childSize, spawnPos, parentVelocity, true, 1f);
+                SpawnAsteroid(childSize, spawnPos, parentVelocity, true, 1f, kind);
             }
         }
 
         private void SpawnRandomAsteroid(Vector2 parentVelocity, bool fromSplit)
         {
             Asteroid.AsteroidSize size = ChooseRandomSize();
+            Asteroid.AsteroidKind kind = ChooseRandomKind();
             float healthMultiplier = 1f;
             if (_isEliteWave && size == Asteroid.AsteroidSize.Large)
             {
@@ -239,7 +306,7 @@ namespace StaticDrift.Enemies
 
             float outward = ClampSpawnOutwardPadding(GetOutwardSpawnPaddingForSize(size));
             Vector2 spawnPosition = GetOffCameraSpawnPosition(outward);
-            SpawnAsteroid(size, spawnPosition, parentVelocity, fromSplit, healthMultiplier);
+            SpawnAsteroid(size, spawnPosition, parentVelocity, fromSplit, healthMultiplier, kind);
         }
 
         private void SpawnAsteroid(
@@ -247,7 +314,8 @@ namespace StaticDrift.Enemies
             Vector2 spawnPosition,
             Vector2 parentVelocity,
             bool fromSplit,
-            float healthMultiplier)
+            float healthMultiplier,
+            Asteroid.AsteroidKind kind)
         {
             string poolId = GetPoolId(size);
             if (string.IsNullOrEmpty(poolId))
@@ -307,15 +375,78 @@ namespace StaticDrift.Enemies
             }
 
             float spin = GetRandomSpin(size);
+            float totalHealth = GetHealth(size) * Mathf.Max(1f, healthMultiplier) * GetKindHealthMultiplier(kind);
             asteroid.Initialize(
                 size,
-                GetHealth(size) * Mathf.Max(1f, healthMultiplier),
+                kind,
+                totalHealth,
+                GetSpriteForKind(kind),
                 _screenWrapMargin,
                 velocity,
                 spin,
                 GetScale(size),
                 _pooler,
                 this);
+        }
+
+        private Asteroid.AsteroidKind ChooseRandomKind()
+        {
+            if (_configuredWaveNumber <= 1)
+            {
+                return Asteroid.AsteroidKind.Rock;
+            }
+
+            float extra = Mathf.Min(_specialAsteroidMaxChance, (_configuredWaveNumber - 1) * _specialAsteroidChancePerWave);
+            if (Random.value >= extra)
+            {
+                return Asteroid.AsteroidKind.Rock;
+            }
+
+            float t = Random.value * 3f;
+            if (t < 1f)
+            {
+                return Asteroid.AsteroidKind.Ice;
+            }
+
+            if (t < 2f)
+            {
+                return Asteroid.AsteroidKind.Obsidian;
+            }
+
+            return Asteroid.AsteroidKind.Copper;
+        }
+
+        private float GetKindHealthMultiplier(Asteroid.AsteroidKind kind)
+        {
+            switch (kind)
+            {
+                case Asteroid.AsteroidKind.Obsidian:
+                    return Mathf.Max(1f, _obsidianHealthMultiplier);
+                case Asteroid.AsteroidKind.Copper:
+                    return Mathf.Max(1f, _copperHealthMultiplier);
+                default:
+                    return 1f;
+            }
+        }
+
+        private Sprite GetSpriteForKind(Asteroid.AsteroidKind kind)
+        {
+            if (_kindSprites == null)
+            {
+                return null;
+            }
+
+            switch (kind)
+            {
+                case Asteroid.AsteroidKind.Ice:
+                    return _kindSprites.Ice;
+                case Asteroid.AsteroidKind.Obsidian:
+                    return _kindSprites.Obsidian;
+                case Asteroid.AsteroidKind.Copper:
+                    return _kindSprites.Copper;
+                default:
+                    return _kindSprites.Rock;
+            }
         }
 
         private bool ShouldSpawnDroneThisTick()

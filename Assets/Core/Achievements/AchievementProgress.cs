@@ -17,13 +17,13 @@ namespace StaticDrift.Achievements
         private const string KeyMask = "Achv_UnlockedMask";
         private const string KeyAsteroidsLifetime = "Achv_AsteroidsLifetime";
         private const string KeyHostilesLifetime = "Achv_HostilesLifetime";
-        private const string KeyEliteWavesLifetime = "Achv_EliteWavesLifetime";
         private const string KeyWrappedKills = "Achv_WrappedEdgeAsteroids";
         private const string KeyPersonalBestBreaks = "Achv_PersonalBestBreaks";
 
         private const int BeltBreakerTarget = 500;
         private const int AcesHighTarget = 40;
-        private const int EliteHunterTarget = 5;
+        private const int AsteroidThousandTarget = 1000;
+        private const int AsteroidFifteenHundredTarget = 1500;
         private const int SectorRecordTarget = 5;
         private const int WrappedTarget = 25;
 
@@ -34,15 +34,15 @@ namespace StaticDrift.Achievements
             "Aces High",
             "Belt Breaker",
             "Chain Reaction",
-            "Elite Hunter",
-            "Cutting It Close",
+            "1,000 Asteroids",
+            "1,500 Asteroids",
             "Family Ties",
             "Quad Core",
             "Volley Storm",
             "Full Deck",
             "Deep Run",
             "Sector Record",
-            "Top of the Pile",
+            "Wave 20",
             "Wrapped"
         };
 
@@ -53,15 +53,15 @@ namespace StaticDrift.Achievements
             "Destroy 40 hostile craft across all runs.",
             "Destroy 500 asteroids across all runs.",
             "Destroy 3 asteroids within 2 seconds.",
-            "Survive 5 elite waves across all runs.",
-            "Finish a timed wave with 3 seconds or less left on the clock.",
+            "Destroy 1000 asteroids across all runs.",
+            "Destroy 1500 asteroids across all runs.",
             "Hold 6+ upgrade stacks in one of Volt, Kinetic, Thermal, or Static in a single run.",
             "Have Volt, Kinetic, Thermal, and Static all present in your loadout at once.",
             "Reach the maximum volley spread (4 shots) in a single run.",
             "Fill all 4 loadout slots in a single run.",
             "Complete wave 15 or higher in a single run.",
             "Set a new personal best score 5 times.",
-            "Reach #1 on the local high score board.",
+            "Complete wave 20 or higher in a single run.",
             "Destroy 25 asteroids while flying near the screen edge."
         };
 
@@ -71,8 +71,8 @@ namespace StaticDrift.Achievements
             0,
             AcesHighTarget,
             BeltBreakerTarget,
-            0,
-            EliteHunterTarget,
+            AsteroidThousandTarget,
+            AsteroidFifteenHundredTarget,
             0,
             0,
             0,
@@ -104,8 +104,10 @@ namespace StaticDrift.Achievements
                     return Mathf.Min(AcesHighTarget, PlayerPrefs.GetInt(KeyHostilesLifetime, 0));
                 case AchievementId.BeltBreaker:
                     return Mathf.Min(BeltBreakerTarget, PlayerPrefs.GetInt(KeyAsteroidsLifetime, 0));
-                case AchievementId.EliteHunter:
-                    return Mathf.Min(EliteHunterTarget, PlayerPrefs.GetInt(KeyEliteWavesLifetime, 0));
+                case AchievementId.AsteroidThousand:
+                    return Mathf.Min(AsteroidThousandTarget, PlayerPrefs.GetInt(KeyAsteroidsLifetime, 0));
+                case AchievementId.AsteroidFifteenHundred:
+                    return Mathf.Min(AsteroidFifteenHundredTarget, PlayerPrefs.GetInt(KeyAsteroidsLifetime, 0));
                 case AchievementId.SectorRecord:
                     return Mathf.Min(SectorRecordTarget, PlayerPrefs.GetInt(KeyPersonalBestBreaks, 0));
                 case AchievementId.Wrapped:
@@ -127,6 +129,8 @@ namespace StaticDrift.Achievements
             }
 
             TryProgressUnlock(AchievementId.BeltBreaker, n, BeltBreakerTarget);
+            TryProgressUnlock(AchievementId.AsteroidThousand, n, AsteroidThousandTarget);
+            TryProgressUnlock(AchievementId.AsteroidFifteenHundred, n, AsteroidFifteenHundredTarget);
             PlayerPrefs.Save();
         }
 
@@ -138,15 +142,7 @@ namespace StaticDrift.Achievements
             PlayerPrefs.Save();
         }
 
-        public static void RecordEliteWaveSurvived()
-        {
-            int n = PlayerPrefs.GetInt(KeyEliteWavesLifetime, 0) + 1;
-            PlayerPrefs.SetInt(KeyEliteWavesLifetime, n);
-            TryProgressUnlock(AchievementId.EliteHunter, n, EliteHunterTarget);
-            PlayerPrefs.Save();
-        }
-
-        public static void OnGameOverScore(int finalScore, IReadOnlyList<int> topScoresAfterSave)
+        public static void OnGameOverScore(int finalScore)
         {
             int bestBefore = ReadBestStoredScore();
             if (finalScore > bestBefore)
@@ -154,11 +150,6 @@ namespace StaticDrift.Achievements
                 int breaks = PlayerPrefs.GetInt(KeyPersonalBestBreaks, 0) + 1;
                 PlayerPrefs.SetInt(KeyPersonalBestBreaks, breaks);
                 TryProgressUnlock(AchievementId.SectorRecord, breaks, SectorRecordTarget);
-            }
-
-            if (topScoresAfterSave != null && topScoresAfterSave.Count > 0 && topScoresAfterSave[0] == finalScore)
-            {
-                Unlock(AchievementId.TopOfThePile);
             }
 
             PlayerPrefs.Save();

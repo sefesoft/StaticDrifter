@@ -25,15 +25,15 @@ namespace StaticDrift.Player
         private float _timeWarpUntil;
 
         [Header("Ship outline & glow (active items)")]
-        [SerializeField] private float _outlineScale = 1.22f;
+        [SerializeField] private float _outlineScale = 1.08f;
         [SerializeField] private float _outlinePulseSpeed = 8.5f;
         [SerializeField] private float _outlineAlphaMin = 0.82f;
         [SerializeField] private float _outlineAlphaMax = 1f;
         [SerializeField] private float _outlineColorBrighten = 0.42f;
-        [SerializeField] private float _itemGlowScale = 1.65f;
+        [SerializeField] private float _itemGlowScale = 1.14f;
         [SerializeField] private float _itemGlowAlphaMin = 0.35f;
         [SerializeField] private float _itemGlowAlphaMax = 0.72f;
-        [SerializeField] private float _itemGlowPulseScaleMul = 0.06f;
+        [SerializeField] private float _itemGlowPulseScaleMul = 0.035f;
 
         private SpriteRenderer _bodySprite;
         private SpriteRenderer _outlineSprite;
@@ -272,7 +272,7 @@ namespace StaticDrift.Player
             var shape = _itemAuraParticles.shape;
             shape.enabled = true;
             shape.shapeType = ParticleSystemShapeType.Circle;
-            shape.radius = 0.38f;
+            shape.radius = 0.3f;
             shape.arc = 360f;
 
             var vel = _itemAuraParticles.velocityOverLifetime;

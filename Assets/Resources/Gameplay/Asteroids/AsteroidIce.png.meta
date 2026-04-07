@@ -1,10 +1,10 @@
 fileFormatVersion: 2
-guid: 62d16f7e17efc0b42b15f59dfe19024d
+guid: f2813e07793f4da40999b6394ffe619c
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: 7777982583903329415
-    second: AsteroidLarge_0
+      213: -1238639293572721758
+    second: AsteroidIce_0
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -37,7 +37,7 @@ TextureImporter:
   maxTextureSize: 2048
   textureSettings:
     serializedVersion: 2
-    filterMode: 0
+    filterMode: 1
     aniso: 1
     mipBias: 0
     wrapU: 1
@@ -46,7 +46,7 @@ TextureImporter:
   nPOTScale: 0
   lightmap: 0
   compressionQuality: 50
-  spriteMode: 1
+  spriteMode: 2
   spriteExtrude: 1
   spriteMeshType: 1
   alignment: 0
@@ -75,7 +75,7 @@ TextureImporter:
     maxTextureSize: 2048
     resizeAlgorithm: 0
     textureFormat: -1
-    textureCompression: 0
+    textureCompression: 1
     compressionQuality: 50
     crunchedCompression: 0
     allowsAlphaSplitting: 0
@@ -165,13 +165,13 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: AsteroidLarge_0
+      name: AsteroidIce_0
       rect:
         serializedVersion: 2
-        x: 0
+        x: 6
         y: 0
-        width: 1376
-        height: 768
+        width: 98
+        height: 98
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -180,8 +180,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: 78c9bb653f1f0fb60800000000000000
-      internalID: 7777982583903329415
+      spriteID: 2a3d1c500287fcee0800000000000000
+      internalID: -1238639293572721758
       vertices: []
       indices: 
       edges: []
@@ -190,7 +190,7 @@ TextureImporter:
     customData: 
     physicsShape: []
     bones: []
-    spriteID: 5e97eb03825dee720800000000000000
+    spriteID: 
     internalID: 0
     vertices: []
     indices: 
@@ -200,7 +200,7 @@ TextureImporter:
     spriteCustomMetadata:
       entries: []
     nameFileIdTable:
-      AsteroidLarge_0: 7777982583903329415
+      AsteroidIce_0: -1238639293572721758
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

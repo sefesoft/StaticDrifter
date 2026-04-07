@@ -33,6 +33,12 @@ namespace StaticDrift.Player
 
         private void Update()
         {
+            if (TryGetComponent(out PlayerFreezeController freeze) && freeze.IsFrozen)
+            {
+                AudioManager.EnsureExists().SetThrustLoopActive(false);
+                return;
+            }
+
             bool rotateLeft = _rotateLeftHeldByUI;
             bool rotateRight = _rotateRightHeldByUI;
             bool accelerate = _accelerateHeldByUI;
@@ -81,6 +87,13 @@ namespace StaticDrift.Player
 
         private void FixedUpdate()
         {
+            if (TryGetComponent(out PlayerFreezeController freeze) && freeze.IsFrozen)
+            {
+                _rigidbody2D.linearVelocity = Vector2.zero;
+                _rigidbody2D.angularVelocity = 0f;
+                return;
+            }
+
             float dt = Time.fixedDeltaTime;
 
             if (Mathf.Abs(_rotateDirectionInput) > 0.01f)

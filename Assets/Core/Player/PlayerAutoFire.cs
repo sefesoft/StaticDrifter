@@ -30,6 +30,11 @@ namespace StaticDrift.Player
 
         private void Update()
         {
+            if (TryGetComponent(out PlayerFreezeController freeze) && freeze.IsFrozen)
+            {
+                return;
+            }
+
             float deltaTime = Time.deltaTime;
             _timeSinceLastShot += deltaTime;
             float effectiveInterval = GetEffectiveFireInterval();

@@ -1,0 +1,96 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &3798658218642223658
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 5902178827946732522}
+  - component: {fileID: 8105341077789065219}
+  m_Layer: 0
+  m_Name: EnemyWaveSpawner
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &5902178827946732522
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3798658218642223658}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &8105341077789065219
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3798658218642223658}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ae01defc78de1c44188fe0923432bc75, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::StaticDrift.Enemies.EnemyWaveSpawner
+  _pooler: {fileID: 0}
+  _camera: {fileID: 0}
+  _asteroidPools:
+    LargePoolId: Asteroid_Large
+    MediumPoolId: Asteroid_Medium
+    SmallPoolId: Asteroid_Small
+  _asteroidStats:
+    LargeHealth: 3
+    MediumHealth: 2
+    SmallHealth: 1
+    LargeScale: {x: 3.4, y: 3.4, z: 3.4}
+    MediumScale: {x: 1.76, y: 1.76, z: 1.76}
+    SmallScale: {x: 0.6, y: 0.6, z: 0.6}
+    LargeSpinMin: 12
+    LargeSpinMax: 38
+    MediumSpinMin: 35
+    MediumSpinMax: 90
+    SmallSpinMin: 80
+    SmallSpinMax: 180
+  _spawnInterval: 2.85
+  _spawnEdgeMargin: 1
+  _screenWrapMargin: 0.8
+  _minSpeed: 1.8
+  _maxSpeed: 4.5
+  _spawnWeightLarge: 0.45
+  _spawnWeightMedium: 0.35
+  _spawnWeightSmall: 0.2
+  _minSpawnInterval: 0.4
+  _droneSpawnTypes: []
+  _droneChancePerWave: 0.02
+  _eliteWaveEvery: 4
+  _eliteHealthMultiplier: 2.1
+  _eliteSpawnIntervalMultiplier: 0.92
+  _waveOneSpawnIntervalMultiplier: 1.7
+  _waveOneSpeedMultiplier: 0.78
+  _disableDronesOnWaveOne: 1
+  _earlyWaveWeightThreshold: 3
+  _earlyWaveLargeWeightMultiplier: 0.75
+  _earlyWaveMediumWeightMultiplier: 0.9
+  _earlyWaveSmallWeightMultiplier: 1.25
+  _kindSprites:
+    Rock: {fileID: 0}
+    Ice: {fileID: 0}
+    Obsidian: {fileID: 0}
+    Copper: {fileID: 0}
+  _obsidianHealthMultiplier: 5.5
+  _copperHealthMultiplier: 1.65
+  _specialAsteroidChancePerWave: 0.04
+  _specialAsteroidMaxChance: 0.38
+  _spawnIntervalDecayPerWave: 0.965

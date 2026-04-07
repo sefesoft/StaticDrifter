@@ -225,8 +225,7 @@ namespace StaticDrift.Managers
             _waveElapsedTime += Time.deltaTime;
             if (_waveElapsedTime >= _currentWaveDuration)
             {
-                float remainingOnClock = _currentWaveDuration - _waveElapsedTime;
-                NotifyTimedWaveAchievements(_currentWave, remainingOnClock);
+                NotifyTimedWaveAchievements(_currentWave);
                 if (ShouldStartBossFight(_currentWave))
                 {
                     StartBossFight();
@@ -270,16 +269,11 @@ namespace StaticDrift.Managers
             AchievementProgress.RecordHostileDestroyed();
         }
 
-        private void NotifyTimedWaveAchievements(int completedWave, float remainingSecondsOnClock)
+        private void NotifyTimedWaveAchievements(int completedWave)
         {
             if (!_waveDamageTakenThisWave)
             {
                 AchievementProgress.Unlock(AchievementId.CleanSector);
-            }
-
-            if (remainingSecondsOnClock <= 3f)
-            {
-                AchievementProgress.Unlock(AchievementId.CuttingClose);
             }
 
             if (completedWave >= 10)
@@ -292,9 +286,9 @@ namespace StaticDrift.Managers
                 AchievementProgress.Unlock(AchievementId.DeepRun);
             }
 
-            if (_waveSpawner != null && _waveSpawner.IsEliteWaveNumber(completedWave))
+            if (completedWave >= 20)
             {
-                AchievementProgress.RecordEliteWaveSurvived();
+                AchievementProgress.Unlock(AchievementId.DeepRunWave20);
             }
         }
 
@@ -317,15 +311,8 @@ namespace StaticDrift.Managers
             _playerBaseScale = _playerTransform.localScale;
             _playerController = player.GetComponent<PlayerController>();
             _playerAutoFire = player.GetComponent<PlayerAutoFire>();
-            _playerThrusterVfx = player.GetComponent<PlayerThrusterVFX>();
             _playerBody = player.GetComponent<Rigidbody2D>();
-
-            PlayerThrusterVFX thrusterVfx = player.GetComponent<PlayerThrusterVFX>();
-            if (thrusterVfx == null)
-            {
-                thrusterVfx = player.AddComponent<PlayerThrusterVFX>();
-            }
-            _playerThrusterVfx = thrusterVfx;
+            _playerThrusterVfx = player.GetComponent<PlayerThrusterVFX>();
 
             PlayerPowerupController powerupController = player.GetComponent<PlayerPowerupController>();
             if (powerupController == null)
@@ -425,28 +412,47 @@ namespace StaticDrift.Managers
             }
         }
 
-        private void OnAsteroidDestroyed(Asteroid.AsteroidSize size)
+        private void OnAsteroidDestroyed(Asteroid.AsteroidSize size, Asteroid.AsteroidKind kind)
         {
             if (_isGameOver)
             {
                 return;
             }
 
+            int scrap;
             if (size == Asteroid.AsteroidSize.Large)
             {
                 _score += 100;
-                _runScrap += 4;
+                scrap = 4;
             }
             else if (size == Asteroid.AsteroidSize.Medium)
             {
                 _score += 60;
-                _runScrap += 2;
+                scrap = 2;
             }
             else
             {
                 _score += 30;
-                _runScrap += 1;
+                scrap = 1;
             }
+
+            if (kind == Asteroid.AsteroidKind.Copper)
+            {
+                if (size == Asteroid.AsteroidSize.Large)
+                {
+                    scrap += 3;
+                }
+                else if (size == Asteroid.AsteroidSize.Medium)
+                {
+                    scrap += 2;
+                }
+                else
+                {
+                    scrap += 1;
+                }
+            }
+
+            _runScrap += scrap;
 
             if (_waveSpawner != null && _waveSpawner.IsEliteWave)
             {
@@ -540,7 +546,7 @@ namespace StaticDrift.Managers
             Time.timeScale = 0f;
 
             List<int> topScores = SaveAndGetTopScores(_score);
-            AchievementProgress.OnGameOverScore(_score, topScores);
+            AchievementProgress.OnGameOverScore(_score);
             int totalScrap = SaveAndGetTotalScrap(_runScrap);
             CreateGameOverOverlay(topScores, totalScrap);
 
