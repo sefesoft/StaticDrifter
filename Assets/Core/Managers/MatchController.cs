@@ -11,6 +11,8 @@ using StaticDrift.Pooling;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using StaticDrift.Items;
+using StaticDrift.VFX;
+using StaticDrift.Environment;
 using StaticDrift.Cards;
 using StaticDrift.Achievements;
 using System.Collections;
@@ -22,6 +24,13 @@ namespace StaticDrift.Managers
     /// </summary>
     public class MatchController : MonoBehaviour
     {
+        /// <summary>Timed-wave environmental hazards. Exactly one kind is rolled per wave after the first boss is defeated.</summary>
+        public enum EnvironmentHazardKind
+        {
+            None = 0,
+            ScreenEdgeLaser = 1
+        }
+
         [SerializeField] private GameObject _playerPrefab;
         [SerializeField] private GameObject _gameplayHUDPrefab;
         [SerializeField] private Vector3 _playerSpawnPosition = Vector3.zero;
@@ -32,11 +41,20 @@ namespace StaticDrift.Managers
         [SerializeField] [Range(0f, 0.5f)] private float _extraWaveDurationFractionPerWave = 0.1f;
         [SerializeField] private int _bossEveryWaves = 5;
         [SerializeField] private float _bossBaseHealth = 220f;
-        [SerializeField] private float _bossHealthPerCycle = 90f;
+        [SerializeField] private float _bossHealthPerLevel = 55f;
+        [SerializeField] private float _bossMaxHealth = 1200f;
         [SerializeField] private RunUpgradeController _runUpgradeController;
         [SerializeField] private ItemSpawner _itemSpawner;
-        [Tooltip("Boss1 prefab (BossShip + physics + sprite). Duplicated for future bosses.")]
-        [SerializeField] private GameObject _bossShipPrefab;
+        [SerializeField] private ScreenEdgeBarrierController _screenEdgeBarriers;
+        [Tooltip("Assigned here (on MatchController in the scene) so corner guns work when ScreenEdgeBarriers is created at runtime — that object has no saved Inspector data.")]
+        [SerializeField] private GameObject _screenEdgeCornerGunPrefab;
+        [Tooltip("After the first boss is defeated, each timed wave picks one hazard from this list (uniform random). Add None entries to weight \"no hazard\" waves.")]
+        [SerializeField] private EnvironmentHazardKind[] _environmentHazardPoolAfterFirstBoss =
+        {
+            EnvironmentHazardKind.ScreenEdgeLaser
+        };
+        [Tooltip("Order: Boss1, Boss2, ... Cycles every N boss waves (wave 5 → index 0, wave 10 → 1, …).")]
+        [SerializeField] private GameObject[] _bossPrefabs;
 
         private float _matchTime;
         private bool _running;
@@ -61,7 +79,12 @@ namespace StaticDrift.Managers
         private bool _waveDamageTakenThisWave;
         private readonly List<float> _chainAsteroidTimes = new List<float>(12);
         private BossShip _bossShip;
+        private int _activeBossPrefabIndex = -1;
+        private int[] _bossSpawnCountByType;
         private bool _isBossFight;
+        private int _bossesDefeated;
+        private EnvironmentHazardKind _activeEnvironmentHazardThisWave;
+        private int _screenEdgeLaserActivationCount;
         private bool _isPaused;
         private float _bossFightElapsed;
         private StarfieldBackground _starfieldBackground;
@@ -107,11 +130,31 @@ namespace StaticDrift.Managers
         public float WaveDuration => _currentWaveDuration;
         /// <summary>True while a timed wave is active (not during boss).</summary>
         public bool IsWaveTimerActive => _running && !_isInterlude && !_isGameOver && !_isBossFight && _currentWaveDuration > 0.01f;
+        /// <summary>True when timed wave hazards (e.g. screen-edge barriers) should run — not during boss, interlude, pause, or transitions.</summary>
+        public bool EnvironmentHazardsActive =>
+            _running && !_isInterlude && !_isGameOver && !_isBossFight && !_isPaused && !_isWaveTransitionAnimating && _currentWaveDuration > 0.01f;
         public int Score => _score;
         public int CurrentWave => _currentWave;
         public bool IsGameOver => _isGameOver;
         public bool IsBossFight => _isBossFight;
         public bool IsPaused => _isPaused;
+        /// <summary>Screen-edge laser barriers and corner turrets use this wave’s roll (false before first boss, or when another hazard won).</summary>
+        public bool IsScreenEdgeLaserHazardActiveThisWave =>
+            _activeEnvironmentHazardThisWave == EnvironmentHazardKind.ScreenEdgeLaser;
+        public EnvironmentHazardKind ActiveEnvironmentHazardThisWave => _activeEnvironmentHazardThisWave;
+
+        /// <summary>
+        /// How many times each hazard has been rolled for a timed wave (1-based difficulty step for that hazard).
+        /// Add matching counters + cases when introducing new EnvironmentHazardKind values.
+        /// </summary>
+        public int GetHazardDifficultyTier(EnvironmentHazardKind kind)
+        {
+            return kind switch
+            {
+                EnvironmentHazardKind.ScreenEdgeLaser => Mathf.Max(1, _screenEdgeLaserActivationCount),
+                _ => 1
+            };
+        }
         public float BossHealthNormalized =>
             _bossShip != null && _isBossFight
                 ? Mathf.Clamp01(_bossShip.CurrentHealth / Mathf.Max(1f, _bossShip.MaxHealth))
@@ -123,7 +166,6 @@ namespace StaticDrift.Managers
         public string BuildSummary => _runUpgradeController != null ? _runUpgradeController.GetSynergySummary() : "V0 K0 T0 S0";
 
         public static MatchController Instance { get; private set; }
-        private static Sprite _pauseInfoItemSpriteSolid;
 
         private void Awake()
         {
@@ -145,7 +187,8 @@ namespace StaticDrift.Managers
             SpawnPlayer();
             SpawnGameplayHUD();
             EnsureItemSpawner();
-            EnsureBossShip();
+            EnsureScreenEdgeBarriers();
+            EnsureBossSpawnCounters();
             _matchTime = 0f;
             _score = 0;
             _runScrap = 0;
@@ -184,6 +227,9 @@ namespace StaticDrift.Managers
             Enemy.HostileDestroyed += OnHostileDestroyedForAchievements;
             _waveDamageTakenThisWave = false;
             _chainAsteroidTimes.Clear();
+            _bossesDefeated = 0;
+            _screenEdgeLaserActivationCount = 0;
+            RollActiveEnvironmentHazardForCurrentWave();
         }
 
         private void EnsureTransitionTimings()
@@ -230,6 +276,11 @@ namespace StaticDrift.Managers
             }
 
             if (TryCheatFinishCurrentTimedWave())
+            {
+                return;
+            }
+
+            if (TryCheatSkipToNextBossWave())
             {
                 return;
             }
@@ -316,6 +367,44 @@ namespace StaticDrift.Managers
             return true;
         }
 
+        /// <summary>Editor / dev only: B jumps to the next boss wave (sets wave to next multiple of boss interval and completes it).</summary>
+        private bool TryCheatSkipToNextBossWave()
+        {
+            if (!Application.isEditor && !Debug.isDebugBuild)
+            {
+                return false;
+            }
+
+            if (_isInterlude || _isGameOver || _isWaveTransitionAnimating || _isBossFight)
+            {
+                return false;
+            }
+
+            if (_currentWaveDuration <= 0.01f)
+            {
+                return false;
+            }
+
+            Keyboard keyboard = Keyboard.current;
+            if (keyboard == null || !keyboard.bKey.wasPressedThisFrame)
+            {
+                return false;
+            }
+
+            int every = Mathf.Max(1, _bossEveryWaves);
+            int targetWave = ((_currentWave + every - 1) / every) * every;
+            _currentWave = Mathf.Max(1, targetWave);
+            _currentWaveDuration = GetWaveDurationSeconds(_currentWave);
+            if (_waveSpawner != null)
+            {
+                _waveSpawner.ConfigureForWave(_currentWave);
+            }
+
+            _waveElapsedTime = _currentWaveDuration;
+            CompleteTimedWaveNormally();
+            return true;
+        }
+
         private void NotifyTimedWaveAchievements(int completedWave)
         {
             if (!_waveDamageTakenThisWave)
@@ -383,16 +472,65 @@ namespace StaticDrift.Managers
             }
         }
 
-        private void EnsureBossShip()
+        private void EnsureScreenEdgeBarriers()
         {
-            if (_bossShip != null)
+            if (_screenEdgeBarriers == null)
+            {
+                _screenEdgeBarriers = FindFirstObjectByType<ScreenEdgeBarrierController>();
+                if (_screenEdgeBarriers == null)
+                {
+                    GameObject go = new GameObject("ScreenEdgeBarriers");
+                    go.transform.SetParent(transform, false);
+                    _screenEdgeBarriers = go.AddComponent<ScreenEdgeBarrierController>();
+                }
+            }
+
+            if (_screenEdgeBarriers != null && _screenEdgeCornerGunPrefab != null)
+            {
+                _screenEdgeBarriers.ApplyCornerGunPrefabFromMatch(_screenEdgeCornerGunPrefab);
+            }
+        }
+
+        private void EnsureBossSpawnCounters()
+        {
+            int n = Mathf.Max(1, _bossPrefabs != null ? _bossPrefabs.Length : 1);
+            if (_bossSpawnCountByType == null || _bossSpawnCountByType.Length != n)
+            {
+                _bossSpawnCountByType = new int[n];
+            }
+        }
+
+        private int GetBossPrefabIndexForCompletedWave(int completedWave)
+        {
+            int typeCount = Mathf.Max(1, _bossPrefabs != null ? _bossPrefabs.Length : 1);
+            int every = Mathf.Max(1, _bossEveryWaves);
+            int ordinal = (completedWave / every) - 1;
+            int idx = ordinal % typeCount;
+            return idx < 0 ? 0 : idx;
+        }
+
+        private void EnsureBossInstanceForIndex(int bossPrefabIndex)
+        {
+            EnsureBossSpawnCounters();
+            int count = Mathf.Max(1, _bossPrefabs != null ? _bossPrefabs.Length : 1);
+            bossPrefabIndex = Mathf.Clamp(bossPrefabIndex, 0, count - 1);
+
+            if (_bossShip != null && _activeBossPrefabIndex == bossPrefabIndex)
             {
                 return;
             }
 
-            if (_bossShipPrefab != null)
+            if (_bossShip != null)
             {
-                GameObject instance = Instantiate(_bossShipPrefab);
+                _bossShip.Defeated -= HandleBossDefeated;
+                Destroy(_bossShip.gameObject);
+                _bossShip = null;
+            }
+
+            GameObject prefab = _bossPrefabs != null && _bossPrefabs.Length > 0 ? _bossPrefabs[bossPrefabIndex] : null;
+            if (prefab != null)
+            {
+                GameObject instance = Instantiate(prefab);
                 _bossShip = instance.GetComponent<BossShip>();
                 if (_bossShip == null)
                 {
@@ -411,6 +549,7 @@ namespace StaticDrift.Managers
                 _bossShip = go.AddComponent<BossShip>();
             }
 
+            _activeBossPrefabIndex = bossPrefabIndex;
             _bossShip.Defeated -= HandleBossDefeated;
             _bossShip.Defeated += HandleBossDefeated;
             _bossShip.Deactivate();
@@ -673,6 +812,11 @@ namespace StaticDrift.Managers
 
             ApplyRunModifiers();
             _waveDamageTakenThisWave = false;
+            RollActiveEnvironmentHazardForCurrentWave();
+            if (_screenEdgeBarriers != null)
+            {
+                _screenEdgeBarriers.NotifyWaveChanged(_currentWave);
+            }
         }
 
         private bool HandlePauseToggleInput()
@@ -754,6 +898,39 @@ namespace StaticDrift.Managers
             return first * (1f + extra * (wave - 1));
         }
 
+        /// <summary>One hazard kind for the current timed wave; None until the first boss has been defeated.</summary>
+        private void RollActiveEnvironmentHazardForCurrentWave()
+        {
+            if (_bossesDefeated < 1)
+            {
+                _activeEnvironmentHazardThisWave = EnvironmentHazardKind.None;
+                return;
+            }
+
+            if (_environmentHazardPoolAfterFirstBoss == null || _environmentHazardPoolAfterFirstBoss.Length == 0)
+            {
+                _activeEnvironmentHazardThisWave = EnvironmentHazardKind.None;
+                return;
+            }
+
+            int i = Random.Range(0, _environmentHazardPoolAfterFirstBoss.Length);
+            _activeEnvironmentHazardThisWave = _environmentHazardPoolAfterFirstBoss[i];
+            RegisterHazardActivationForCurrentRoll();
+        }
+
+        private void RegisterHazardActivationForCurrentRoll()
+        {
+            switch (_activeEnvironmentHazardThisWave)
+            {
+                case EnvironmentHazardKind.ScreenEdgeLaser:
+                    _screenEdgeLaserActivationCount++;
+                    break;
+                case EnvironmentHazardKind.None:
+                default:
+                    break;
+            }
+        }
+
         private bool ShouldStartBossFight(int completedWave)
         {
             int every = Mathf.Max(1, _bossEveryWaves);
@@ -788,14 +965,23 @@ namespace StaticDrift.Managers
                 spawnPos.z = 0f;
             }
 
-            float bossHealth = CalculateBossHealth(_currentWave);
+            EnsureBossSpawnCounters();
+            int bossPrefabIndex = GetBossPrefabIndexForCompletedWave(_currentWave);
+            int bossLevel = ++_bossSpawnCountByType[bossPrefabIndex];
+            float bossHealth = CalculateBossHealthForLevel(bossLevel);
             Transform playerTarget = _playerHealth != null ? _playerHealth.transform : null;
 
             GameObject warningGo = CreateBossWarningOverlay();
-            StartCoroutine(BeginBossFightAfterWarning(warningGo, spawnPos, bossHealth, playerTarget));
+            StartCoroutine(BeginBossFightAfterWarning(warningGo, spawnPos, bossHealth, playerTarget, bossPrefabIndex, bossLevel));
         }
 
-        private IEnumerator BeginBossFightAfterWarning(GameObject warningGo, Vector3 spawnPos, float bossHealth, Transform playerTarget)
+        private IEnumerator BeginBossFightAfterWarning(
+            GameObject warningGo,
+            Vector3 spawnPos,
+            float bossHealth,
+            Transform playerTarget,
+            int bossPrefabIndex,
+            int bossLevel)
         {
             float wait = Mathf.Max(0f, _bossWarningDurationSeconds);
             if (wait > 0f)
@@ -808,12 +994,12 @@ namespace StaticDrift.Managers
                 Destroy(warningGo);
             }
 
-            EnsureBossShip();
+            EnsureBossInstanceForIndex(bossPrefabIndex);
             _isBossFight = true;
             _running = true;
             _bossFightElapsed = 0f;
 
-            _bossShip.Activate(playerTarget, bossHealth, spawnPos);
+            _bossShip.Activate(playerTarget, bossHealth, spawnPos, bossLevel);
             AudioManager.EnsureExists().PlayBossMusic();
         }
 
@@ -851,10 +1037,11 @@ namespace StaticDrift.Managers
             return canvasGo;
         }
 
-        private float CalculateBossHealth(int currentWave)
+        private float CalculateBossHealthForLevel(int bossLevel)
         {
-            int cycle = Mathf.Max(0, (currentWave / Mathf.Max(1, _bossEveryWaves)) - 1);
-            return _bossBaseHealth + _bossHealthPerCycle * cycle;
+            int lvl = Mathf.Max(1, bossLevel);
+            float raw = _bossBaseHealth + (lvl - 1) * _bossHealthPerLevel;
+            return Mathf.Min(_bossMaxHealth, raw);
         }
 
         private void HandleBossDefeated()
@@ -863,6 +1050,8 @@ namespace StaticDrift.Managers
             {
                 return;
             }
+
+            _bossesDefeated++;
 
             // Freeze match logic immediately so the next Update tick can't start another boss
             // while _currentWaveDuration is still 0f (boss fight state).
@@ -900,29 +1089,9 @@ namespace StaticDrift.Managers
             BeginWaveInterlude(nextWave, bossDuration);
         }
 
-        private static void ConfigureAdditiveMaterial(ParticleSystemRenderer renderer, out Material material)
+        private static void ConfigureAdditiveMaterial(ParticleSystemRenderer renderer)
         {
-            material = null;
-            if (renderer == null)
-            {
-                return;
-            }
-
-            Shader shader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
-            if (shader == null)
-            {
-                shader = Shader.Find("Particles/Additive");
-            }
-
-            if (shader == null)
-            {
-                shader = Shader.Find("Legacy Shaders/Particles/Additive");
-            }
-            if (shader != null)
-            {
-                material = new Material(shader);
-                renderer.material = material;
-            }
+            SharedVfxMaterials.ApplyUrpParticlesUnlit(renderer);
         }
 
         private GameObject CreateGameOverExplosionVfx(Vector3 position, float visualDuration = -1f)
@@ -958,9 +1127,10 @@ namespace StaticDrift.Managers
             main.duration = 0.08f;
             main.startLifetime = Mathf.Clamp(visualDuration * 0.5f, 0.22f, 0.75f);
             main.startSpeed = new ParticleSystem.MinMaxCurve(3.2f * i, 7.5f * i);
-            main.startSize = new ParticleSystem.MinMaxCurve(0.12f * i, 0.38f * i);
+            main.startSize = new ParticleSystem.MinMaxCurve(0.045f * i, 0.13f * i);
+            main.startRotation = new ParticleSystem.MinMaxCurve(0f, 2f * Mathf.PI);
             main.gravityModifier = 0.15f;
-            main.maxParticles = Mathf.Min(8000, Mathf.RoundToInt(2200 * i));
+            main.maxParticles = Mathf.Min(8000, Mathf.RoundToInt(3200 * i));
             main.stopAction = ParticleSystemStopAction.Destroy;
             main.useUnscaledTime = true;
             main.simulationSpace = ParticleSystemSimulationSpace.World;
@@ -971,7 +1141,7 @@ namespace StaticDrift.Managers
             var shape = ps.shape;
             shape.enabled = true;
             shape.shapeType = ParticleSystemShapeType.Sphere;
-            shape.radius = Mathf.Min(0.35f, 0.08f * i);
+            shape.radius = Mathf.Min(0.28f, 0.065f * i);
 
             var colorOverLifetime = ps.colorOverLifetime;
             colorOverLifetime.enabled = true;
@@ -986,21 +1156,21 @@ namespace StaticDrift.Managers
                 },
                 alphaKeys = new GradientAlphaKey[]
                 {
-                    new GradientAlphaKey(1f, 0f),
-                    new GradientAlphaKey(0.85f, 0.35f),
+                    new GradientAlphaKey(0.92f, 0f),
+                    new GradientAlphaKey(0.7f, 0.28f),
                     new GradientAlphaKey(0f, 1f),
                 }
             };
 
             var sizeOverLifetime = ps.sizeOverLifetime;
             sizeOverLifetime.enabled = true;
-            sizeOverLifetime.size = new ParticleSystem.MinMaxCurve(1f, 0.12f);
+            sizeOverLifetime.size = new ParticleSystem.MinMaxCurve(1f, 0.06f);
 
             var renderer = ps.GetComponent<ParticleSystemRenderer>();
-            ConfigureAdditiveMaterial(renderer, out _);
+            ConfigureAdditiveMaterial(renderer);
 
             ps.Play();
-            ps.Emit(Mathf.Clamp(Mathf.RoundToInt(520 * i), 200, 4000));
+            ps.Emit(Mathf.Clamp(Mathf.RoundToInt(780 * i), 320, 5200));
         }
 
         private static void CreateGameOverOrangeEmbers(GameObject root, float visualDuration, float intensity = 1f)
@@ -1017,9 +1187,10 @@ namespace StaticDrift.Managers
             main.duration = 0.06f;
             main.startLifetime = Mathf.Clamp(visualDuration * 0.85f, 0.35f, 1.25f);
             main.startSpeed = new ParticleSystem.MinMaxCurve(0.4f * i, 2.2f * i);
-            main.startSize = new ParticleSystem.MinMaxCurve(0.08f * i, 0.22f * i);
+            main.startSize = new ParticleSystem.MinMaxCurve(0.03f * i, 0.09f * i);
+            main.startRotation = new ParticleSystem.MinMaxCurve(0f, 2f * Mathf.PI);
             main.gravityModifier = -0.05f;
-            main.maxParticles = Mathf.Min(5000, Mathf.RoundToInt(1400 * i));
+            main.maxParticles = Mathf.Min(5000, Mathf.RoundToInt(2000 * i));
             main.stopAction = ParticleSystemStopAction.Destroy;
             main.useUnscaledTime = true;
             main.simulationSpace = ParticleSystemSimulationSpace.World;
@@ -1030,7 +1201,7 @@ namespace StaticDrift.Managers
             var shape = ps.shape;
             shape.enabled = true;
             shape.shapeType = ParticleSystemShapeType.Sphere;
-            shape.radius = Mathf.Min(0.45f, 0.18f * i);
+            shape.radius = Mathf.Min(0.36f, 0.14f * i);
 
             var colorOverLifetime = ps.colorOverLifetime;
             colorOverLifetime.enabled = true;
@@ -1044,20 +1215,20 @@ namespace StaticDrift.Managers
                 },
                 alphaKeys = new GradientAlphaKey[]
                 {
-                    new GradientAlphaKey(0.9f, 0f),
+                    new GradientAlphaKey(0.82f, 0f),
                     new GradientAlphaKey(0f, 1f),
                 }
             };
 
             var sizeOverLifetime = ps.sizeOverLifetime;
             sizeOverLifetime.enabled = true;
-            sizeOverLifetime.size = new ParticleSystem.MinMaxCurve(1.05f, 2.1f);
+            sizeOverLifetime.size = new ParticleSystem.MinMaxCurve(1f, 1.35f);
 
             var renderer = ps.GetComponent<ParticleSystemRenderer>();
-            ConfigureAdditiveMaterial(renderer, out _);
+            ConfigureAdditiveMaterial(renderer);
 
             ps.Play();
-            ps.Emit(Mathf.Clamp(Mathf.RoundToInt(220 * i), 80, 2000));
+            ps.Emit(Mathf.Clamp(Mathf.RoundToInt(340 * i), 120, 2600));
         }
 
         private void CreateGameOverOverlay(List<int> topScores, int totalScrap)
@@ -1705,11 +1876,11 @@ namespace StaticDrift.Managers
             });
 
             Transform itemsContent = itemsContentRect.transform;
-            CreatePauseInfoRow(itemsContent, "ShieldInfo", GetPauseInfoItemSprite(), ItemVisualColors.Get(ItemType.ContactShield), "C", "Contact Shield", "Blocks collision damage for a short time.", new Vector2(0f, -(listTopPad + (0f * itemRowSpacing))), true);
-            CreatePauseInfoRow(itemsContent, "LaserInfo", GetPauseInfoItemSprite(), ItemVisualColors.Get(ItemType.PiercingLaser), "L", "Piercing Laser", "Shots become laser-like and pierce through multiple targets for a limited time.", new Vector2(0f, -(listTopPad + (1f * itemRowSpacing))), true);
-            CreatePauseInfoRow(itemsContent, "OverdriveInfo", GetPauseInfoItemSprite(), ItemVisualColors.Get(ItemType.Overdrive), "O", "Overdrive", "Boosts fire rate and projectile speed while the effect lasts.", new Vector2(0f, -(listTopPad + (2f * itemRowSpacing))), true);
-            CreatePauseInfoRow(itemsContent, "TimeWarpInfo", GetPauseInfoItemSprite(), ItemVisualColors.Get(ItemType.TimeWarp), "T", "Time Warp", "Slows enemy movement temporarily to create breathing room.", new Vector2(0f, -(listTopPad + (3f * itemRowSpacing))), true);
-            CreatePauseInfoRow(itemsContent, "HealthPackInfo", GetPauseInfoItemSprite(), ItemVisualColors.Get(ItemType.HealthPack), "H", "Health Pack", "Instantly restores part of your HP.", new Vector2(0f, -(listTopPad + (4f * itemRowSpacing))), true);
+            CreatePauseInfoRow(itemsContent, "ShieldInfo", ItemTypeSprites.Get(ItemType.ContactShield), Color.white, "C", "Contact Shield", "Blocks collision damage for a short time.", new Vector2(0f, -(listTopPad + (0f * itemRowSpacing))), true);
+            CreatePauseInfoRow(itemsContent, "LaserInfo", ItemTypeSprites.Get(ItemType.PiercingLaser), Color.white, "L", "Piercing Laser", "Shots become laser-like and pierce through multiple targets for a limited time.", new Vector2(0f, -(listTopPad + (1f * itemRowSpacing))), true);
+            CreatePauseInfoRow(itemsContent, "OverdriveInfo", ItemTypeSprites.Get(ItemType.Overdrive), Color.white, "O", "Overdrive", "Boosts fire rate and projectile speed while the effect lasts.", new Vector2(0f, -(listTopPad + (2f * itemRowSpacing))), true);
+            CreatePauseInfoRow(itemsContent, "TimeWarpInfo", ItemTypeSprites.Get(ItemType.TimeWarp), Color.white, "T", "Time Warp", "Slows enemy movement temporarily to create breathing room.", new Vector2(0f, -(listTopPad + (3f * itemRowSpacing))), true);
+            CreatePauseInfoRow(itemsContent, "HealthPackInfo", ItemTypeSprites.Get(ItemType.HealthPack), Color.white, "H", "Health Pack", "Instantly restores part of your HP.", new Vector2(0f, -(listTopPad + (4f * itemRowSpacing))), true);
 
             float leftX = useMobileLayout ? -338f : -272f;
             float rightX = useMobileLayout ? 338f : 272f;
@@ -2027,40 +2198,6 @@ namespace StaticDrift.Managers
             descText.textWrappingMode = TextWrappingModes.Normal;
             descText.overflowMode = TextOverflowModes.Overflow;
             descText.raycastTarget = false;
-        }
-
-        private static Sprite GetPauseInfoItemSprite()
-        {
-            if (_pauseInfoItemSpriteSolid != null)
-            {
-                return _pauseInfoItemSpriteSolid;
-            }
-
-            const int size = 64;
-            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
-            tex.filterMode = FilterMode.Bilinear;
-            tex.wrapMode = TextureWrapMode.Clamp;
-
-            Vector2 center = new Vector2((size - 1) * 0.5f, (size - 1) * 0.5f);
-            float outer = 30f;
-            for (int y = 0; y < size; y++)
-            {
-                for (int x = 0; x < size; x++)
-                {
-                    float d = Vector2.Distance(new Vector2(x, y), center);
-                    float alpha = d <= outer ? 1f : 0f;
-                    if (d > outer && d <= outer + 1.35f)
-                    {
-                        alpha = 1f - Mathf.InverseLerp(outer, outer + 1.35f, d);
-                    }
-
-                    tex.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
-                }
-            }
-
-            tex.Apply();
-            _pauseInfoItemSpriteSolid = Sprite.Create(tex, new Rect(0f, 0f, size, size), new Vector2(0.5f, 0.5f), 100f);
-            return _pauseInfoItemSpriteSolid;
         }
 
         private static Button CreateButton(Transform parent, string objectName, string label, Vector2 anchor, UnityEngine.Events.UnityAction onClick)
@@ -2772,6 +2909,7 @@ namespace StaticDrift.Managers
 
             CacheDefaultCameraPosition();
             SetPlayerTransitionControlEnabled(false);
+            SetWaveTransitionWorldVisualsHidden(true);
 
             Vector3 playerPos = _playerTransform.position;
             Vector3 startCameraPos = cam.transform.position;
@@ -2901,6 +3039,8 @@ namespace StaticDrift.Managers
             {
                 _starfieldBackground.SetWarpAmount(0f);
             }
+
+            SetWaveTransitionWorldVisualsHidden(false);
             SetHyperTravelVisuals(false);
         }
 
@@ -2946,6 +3086,19 @@ namespace StaticDrift.Managers
             if (_playerThrusterVfx != null)
             {
                 _playerThrusterVfx.SetManualThrusterOverride(active, thrusterIntensity);
+            }
+        }
+
+        private void SetWaveTransitionWorldVisualsHidden(bool hidden)
+        {
+            if (_itemSpawner != null)
+            {
+                _itemSpawner.SetActivePickupVisualsVisible(!hidden);
+            }
+
+            if (hidden)
+            {
+                ProjectileSplashRing.DestroyAllActive();
             }
         }
 

@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 using StaticDrift.Managers;
+using StaticDrift.Environment;
 
 namespace StaticDrift.Player
 {
@@ -152,27 +153,60 @@ namespace StaticDrift.Player
 
             Vector2 pos = _rigidbody2D.position;
             bool wrapped = false;
+            ScreenEdgeBarrierController barriers = ScreenEdgeBarrierController.Instance;
 
             if (pos.x < left - _screenWrapMargin)
             {
-                pos.x = right + _screenWrapMargin;
-                wrapped = true;
+                if (barriers != null && barriers.IsLeftBarrierBlockingWrap(pos.x, left, _screenWrapMargin))
+                {
+                    barriers.ApplyLeftWrapBlock(ref pos, _rigidbody2D, left);
+                    wrapped = true;
+                }
+                else
+                {
+                    pos.x = right + _screenWrapMargin;
+                    wrapped = true;
+                }
             }
             else if (pos.x > right + _screenWrapMargin)
             {
-                pos.x = left - _screenWrapMargin;
-                wrapped = true;
+                if (barriers != null && barriers.IsRightBarrierBlockingWrap(pos.x, right, _screenWrapMargin))
+                {
+                    barriers.ApplyRightWrapBlock(ref pos, _rigidbody2D, right);
+                    wrapped = true;
+                }
+                else
+                {
+                    pos.x = left - _screenWrapMargin;
+                    wrapped = true;
+                }
             }
 
             if (pos.y < bottom - _screenWrapMargin)
             {
-                pos.y = top + _screenWrapMargin;
-                wrapped = true;
+                if (barriers != null && barriers.IsBottomBarrierBlockingWrap(pos.y, bottom, _screenWrapMargin))
+                {
+                    barriers.ApplyBottomWrapBlock(ref pos, _rigidbody2D, bottom);
+                    wrapped = true;
+                }
+                else
+                {
+                    pos.y = top + _screenWrapMargin;
+                    wrapped = true;
+                }
             }
             else if (pos.y > top + _screenWrapMargin)
             {
-                pos.y = bottom - _screenWrapMargin;
-                wrapped = true;
+                if (barriers != null && barriers.IsTopBarrierBlockingWrap(pos.y, top, _screenWrapMargin))
+                {
+                    barriers.ApplyTopWrapBlock(ref pos, _rigidbody2D, top);
+                    wrapped = true;
+                }
+                else
+                {
+                    pos.y = bottom - _screenWrapMargin;
+                    wrapped = true;
+                }
             }
 
             if (wrapped)

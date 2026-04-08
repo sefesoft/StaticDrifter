@@ -28,9 +28,12 @@ namespace StaticDrift.Managers
         private AudioClip _waveInterlude;
         private AudioClip _gameOver;
         private AudioClip _thrustLoopClip;
+        private AudioClip _edgeBarrierActivate;
+        private AudioClip _playerBarrierLaserDamage;
 
         private float _nextShootSfxAt;
         private float _nextAsteroidHitSfxAt;
+        private float _nextBarrierLaserHitSfxAt;
 
         public static AudioManager Instance { get; private set; }
 
@@ -197,6 +200,19 @@ namespace StaticDrift.Managers
             PlaySfx(_playerHit, 0.38f, 1f);
         }
 
+        /// <summary>Louder than generic player hit; throttled so rapid barrier DOT stays audible but not clipping.</summary>
+        public void PlayPlayerBarrierLaserDamage()
+        {
+            float now = Time.unscaledTime;
+            if (now < _nextBarrierLaserHitSfxAt)
+            {
+                return;
+            }
+
+            _nextBarrierLaserHitSfxAt = now + 0.085f;
+            PlaySfx(_playerBarrierLaserDamage, 0.62f, Random.Range(0.94f, 1.08f));
+        }
+
         public void PlayWaveInterlude()
         {
             if (_interludeMusic != null)
@@ -252,6 +268,14 @@ namespace StaticDrift.Managers
             _waveInterlude = CreateToneSweep("wave_interlude", 520f, 920f, 0.22f, 0.30f);
             _gameOver = CreateToneSweep("game_over", 280f, 70f, 0.45f, 0.38f);
             _thrustLoopClip = Resources.Load<AudioClip>("SFX/thust_sfx") ?? BuildThrustLoopSfx();
+            _edgeBarrierActivate = CreateToneSweep("edge_barrier_activate", 120f, 920f, 0.2f, 0.3f);
+            _playerBarrierLaserDamage = CreateBarrierLaserZapClip();
+        }
+
+        /// <summary>Screen-edge hazard lasers power on.</summary>
+        public void PlayEdgeBarrierActivate()
+        {
+            PlaySfx(_edgeBarrierActivate, 0.48f, Random.Range(0.97f, 1.03f));
         }
 
         private void AssignMusicFromResources()
@@ -310,6 +334,29 @@ namespace StaticDrift.Managers
             }
 
             AudioClip clip = AudioClip.Create(name, sampleCount, 1, SampleRate, false);
+            clip.SetData(data, 0);
+            return clip;
+        }
+
+        /// <summary>Bright electric zap for screen-edge barrier DOT (distinct from generic player hit).</summary>
+        private static AudioClip CreateBarrierLaserZapClip()
+        {
+            const float seconds = 0.1f;
+            int sampleCount = Mathf.Max(32, Mathf.FloorToInt(seconds * SampleRate));
+            float[] data = new float[sampleCount];
+            float phase = 0f;
+            for (int i = 0; i < sampleCount; i++)
+            {
+                float t = (float)i / Mathf.Max(1, sampleCount - 1);
+                float env = Mathf.Sin(t * Mathf.PI);
+                float freq = Mathf.Lerp(720f, 240f, t);
+                phase += (freq * Mathf.PI * 2f) / SampleRate;
+                float tone = Mathf.Sin(phase) * 0.58f;
+                float noise = (Random.value * 2f - 1f) * 0.42f;
+                data[i] = Mathf.Clamp((tone + noise) * env, -1f, 1f);
+            }
+
+            AudioClip clip = AudioClip.Create("barrier_laser_player_hit", sampleCount, 1, SampleRate, false);
             clip.SetData(data, 0);
             return clip;
         }

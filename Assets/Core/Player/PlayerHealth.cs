@@ -52,7 +52,8 @@ namespace StaticDrift.Player
             _bonusLives += amount;
         }
 
-        public void TakeDamage(float amount)
+        /// <param name="environmentalDamageOverTime">Screen-edge lasers etc.: each tick applies damage and does not consume i-frames (still respects damage immunity powerups).</param>
+        public void TakeDamage(float amount, bool environmentalDamageOverTime = false)
         {
             if (amount <= 0f)
             {
@@ -72,7 +73,7 @@ namespace StaticDrift.Player
             amount *= _incomingDamageMultiplier;
 
             float time = Time.time;
-            if (time < _invulnerableUntil)
+            if (!environmentalDamageOverTime && time < _invulnerableUntil)
             {
                 return;
             }
@@ -94,9 +95,15 @@ namespace StaticDrift.Player
                 return;
             }
 
-            AudioManager.EnsureExists().PlayPlayerHit();
-
-            _invulnerableUntil = time + _invulnerabilityDuration;
+            if (environmentalDamageOverTime)
+            {
+                AudioManager.EnsureExists().PlayPlayerBarrierLaserDamage();
+            }
+            else
+            {
+                AudioManager.EnsureExists().PlayPlayerHit();
+                _invulnerableUntil = time + _invulnerabilityDuration;
+            }
         }
 
         public void HealFull()

@@ -1,4 +1,5 @@
 using UnityEngine;
+using StaticDrift.VFX;
 
 namespace StaticDrift.Player
 {
@@ -29,6 +30,12 @@ namespace StaticDrift.Player
         [SerializeField] private Color _glowColor = new Color(1f, 0.38f, 0.06f, 0.5f);
         [SerializeField] private Color _coreColor = new Color(1f, 0.98f, 0.78f, 0.98f);
 
+        [Header("Post-processing (bloom)")]
+        [Tooltip(
+            "Thruster sprites use alpha blending with fairly low alpha, so the resolved HDR color on screen stays below bloom threshold. " +
+            "This multiplies RGB only (HDR) so bloom matches lasers; tonemapping keeps apparent brightness sane. Use 1 to disable.")]
+        [SerializeField] [Min(1f)] private float _thrusterBloomRgbMultiplier = 4f;
+
         [Header("Motion")]
         [SerializeField] private float _flickerSpeed = 30f;
         [SerializeField] private float _flashSpeed = 19f;
@@ -41,7 +48,6 @@ namespace StaticDrift.Player
         private float _blend;
 
         private static Sprite _gradientFlameSprite;
-        private static Material _additiveParticleMat;
         private static int _gradientSpriteRecipe;
         private const int GradientSpriteRecipe = 2;
 
@@ -90,7 +96,7 @@ namespace StaticDrift.Player
 
             Color fc = _flameColor;
             fc.a = (0.55f + 0.45f * combined) * envelope;
-            _flameRenderer.color = fc;
+            _flameRenderer.color = ScaleRgbForBloom(fc);
 
             if (_glowRenderer != null)
             {
@@ -99,7 +105,7 @@ namespace StaticDrift.Player
                 _glowRenderer.transform.localRotation = wobbleRot;
                 Color gc = _glowColor;
                 gc.a = _glowColor.a * (0.55f + 0.45f * combined) * envelope;
-                _glowRenderer.color = gc;
+                _glowRenderer.color = ScaleRgbForBloom(gc);
             }
 
             if (_coreRenderer != null)
@@ -109,7 +115,7 @@ namespace StaticDrift.Player
                 _coreRenderer.transform.localRotation = wobbleRot;
                 Color cc = _coreColor;
                 cc.a = (0.75f + 0.25f * combined) * envelope;
-                _coreRenderer.color = cc;
+                _coreRenderer.color = ScaleRgbForBloom(cc);
             }
 
             if (_outerBloomRenderer != null)
@@ -119,8 +125,17 @@ namespace StaticDrift.Player
                 _outerBloomRenderer.transform.localRotation = wobbleRot;
                 Color bc = _outerBloomColor;
                 bc.a = _outerBloomColor.a * envelope * bloomPulse;
-                _outerBloomRenderer.color = bc;
+                _outerBloomRenderer.color = ScaleRgbForBloom(bc);
             }
+        }
+
+        /// <summary>
+        /// Alpha-blended thruster quads contribute roughly rgb×alpha to the HDR buffer; boost RGB so bloom threshold is exceeded like on opaque lasers.
+        /// </summary>
+        private Color ScaleRgbForBloom(Color c)
+        {
+            float k = Mathf.Max(1f, _thrusterBloomRgbMultiplier);
+            return new Color(c.r * k, c.g * k, c.b * k, c.a);
         }
 
         public void SetManualThrusterOverride(bool active, float intensity = 1f)
@@ -220,9 +235,9 @@ namespace StaticDrift.Player
                 bloom.transform.SetAsFirstSibling();
                 _outerBloomRenderer = bloom.AddComponent<SpriteRenderer>();
                 _outerBloomRenderer.sprite = gradient;
-                _outerBloomRenderer.color = _outerBloomColor;
+                _outerBloomRenderer.color = ScaleRgbForBloom(_outerBloomColor);
                 _outerBloomRenderer.sortingOrder = 6;
-                TrySetAdditiveMaterial(_outerBloomRenderer);
+                ApplyThrusterSpriteMaterial(_outerBloomRenderer);
             }
 
             if (_glowRenderer == null)
@@ -233,8 +248,9 @@ namespace StaticDrift.Player
                 glow.transform.SetAsFirstSibling();
                 _glowRenderer = glow.AddComponent<SpriteRenderer>();
                 _glowRenderer.sprite = gradient;
-                _glowRenderer.color = _glowColor;
+                _glowRenderer.color = ScaleRgbForBloom(_glowColor);
                 _glowRenderer.sortingOrder = 10;
+                ApplyThrusterSpriteMaterial(_glowRenderer);
             }
 
             if (_flameRenderer == null)
@@ -244,8 +260,9 @@ namespace StaticDrift.Player
                 flame.transform.localPosition = Vector3.zero;
                 _flameRenderer = flame.AddComponent<SpriteRenderer>();
                 _flameRenderer.sprite = gradient;
-                _flameRenderer.color = _flameColor;
+                _flameRenderer.color = ScaleRgbForBloom(_flameColor);
                 _flameRenderer.sortingOrder = 12;
+                ApplyThrusterSpriteMaterial(_flameRenderer);
             }
 
             if (_coreRenderer == null)
@@ -255,8 +272,9 @@ namespace StaticDrift.Player
                 core.transform.localPosition = new Vector3(0f, -0.05f, 0f);
                 _coreRenderer = core.AddComponent<SpriteRenderer>();
                 _coreRenderer.sprite = gradient;
-                _coreRenderer.color = _coreColor;
+                _coreRenderer.color = ScaleRgbForBloom(_coreColor);
                 _coreRenderer.sortingOrder = 14;
+                ApplyThrusterSpriteMaterial(_coreRenderer);
             }
 
             WirePrefabFlameSpritesAndMaterials(gradient);
@@ -270,8 +288,9 @@ namespace StaticDrift.Player
                 if (_outerBloomRenderer.sprite == null)
                 {
                     _outerBloomRenderer.sprite = gradient;
-                    TrySetAdditiveMaterial(_outerBloomRenderer);
                 }
+
+                ApplyThrusterSpriteMaterial(_outerBloomRenderer);
             }
 
             if (_glowRenderer != null && _glowRenderer.sprite == null)
@@ -279,14 +298,29 @@ namespace StaticDrift.Player
                 _glowRenderer.sprite = gradient;
             }
 
+            if (_glowRenderer != null)
+            {
+                ApplyThrusterSpriteMaterial(_glowRenderer);
+            }
+
             if (_flameRenderer != null && _flameRenderer.sprite == null)
             {
                 _flameRenderer.sprite = gradient;
             }
 
+            if (_flameRenderer != null)
+            {
+                ApplyThrusterSpriteMaterial(_flameRenderer);
+            }
+
             if (_coreRenderer != null && _coreRenderer.sprite == null)
             {
                 _coreRenderer.sprite = gradient;
+            }
+
+            if (_coreRenderer != null)
+            {
+                ApplyThrusterSpriteMaterial(_coreRenderer);
             }
         }
 
@@ -355,37 +389,9 @@ namespace StaticDrift.Player
             return _gradientFlameSprite;
         }
 
-        private static void TrySetAdditiveMaterial(SpriteRenderer renderer)
+        private static void ApplyThrusterSpriteMaterial(SpriteRenderer renderer)
         {
-            if (renderer == null)
-            {
-                return;
-            }
-
-            if (_additiveParticleMat != null)
-            {
-                renderer.material = _additiveParticleMat;
-                return;
-            }
-
-            Shader shader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
-            if (shader == null)
-            {
-                shader = Shader.Find("Particles/Additive");
-            }
-
-            if (shader == null)
-            {
-                shader = Shader.Find("Legacy Shaders/Particles/Additive");
-            }
-
-            if (shader == null)
-            {
-                return;
-            }
-
-            _additiveParticleMat = new Material(shader);
-            renderer.material = _additiveParticleMat;
+            SharedVfxMaterials.ApplyUrpSpriteUnlitDefault(renderer);
         }
     }
 }

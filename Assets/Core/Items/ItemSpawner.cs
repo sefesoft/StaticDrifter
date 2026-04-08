@@ -20,10 +20,11 @@ namespace StaticDrift.Items
         [SerializeField] [Range(0.08f, 0.35f)] private float _safeViewportInsetTop = 0.13f;
         [SerializeField] private Key _debugSpawnKey = Key.I;
 
+        private static readonly Vector3 ItemPickupBaseScale = new Vector3(0.42f, 0.42f, 1f);
+
         private readonly List<ItemPickup> _pool = new List<ItemPickup>(8);
         private float _nextSpawnIn;
         private Camera _camera;
-        private static Sprite _pickupSprite;
 
         private void Awake()
         {
@@ -70,6 +71,22 @@ namespace StaticDrift.Items
             pickup.transform.SetParent(transform, false);
         }
 
+        /// <summary>Hide or show active pickups during wave hyperspace transitions.</summary>
+        public void SetActivePickupVisualsVisible(bool visible)
+        {
+            int count = _pool.Count;
+            for (int i = 0; i < count; i++)
+            {
+                ItemPickup pickup = _pool[i];
+                if (pickup == null || !pickup.gameObject.activeSelf)
+                {
+                    continue;
+                }
+
+                pickup.SetVisualAndColliderEnabled(visible);
+            }
+        }
+
         private void BuildPool()
         {
             int count = Mathf.Max(1, _poolSize);
@@ -77,10 +94,10 @@ namespace StaticDrift.Items
             {
                 GameObject go = new GameObject("ItemPickup_" + i);
                 go.transform.SetParent(transform, false);
-                go.transform.localScale = new Vector3(0.55f, 0.55f, 1f);
+                go.transform.localScale = ItemPickupBaseScale;
 
                 SpriteRenderer renderer = go.AddComponent<SpriteRenderer>();
-                renderer.sprite = GetPickupSprite();
+                renderer.sprite = ItemTypeSprites.Get(ItemType.ContactShield);
                 renderer.sortingOrder = 12;
 
                 CircleCollider2D collider2D = go.AddComponent<CircleCollider2D>();
@@ -103,7 +120,7 @@ namespace StaticDrift.Items
                 return;
             }
 
-            pickup.Configure(GetRandomType());
+            pickup.Configure(GetRandomType(), ItemPickupBaseScale);
             pickup.transform.position = GetSpawnPosition();
             pickup.transform.rotation = Quaternion.identity;
             pickup.gameObject.SetActive(true);
@@ -206,45 +223,6 @@ namespace StaticDrift.Items
         private void ScheduleNextRoll()
         {
             _nextSpawnIn = Random.Range(_minSpawnInterval, _maxSpawnInterval);
-        }
-
-        private static Sprite GetPickupSprite()
-        {
-            if (_pickupSprite != null)
-            {
-                return _pickupSprite;
-            }
-
-            const int size = 64;
-            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
-            tex.filterMode = FilterMode.Bilinear;
-            tex.wrapMode = TextureWrapMode.Clamp;
-
-            Vector2 center = new Vector2((size - 1) * 0.5f, (size - 1) * 0.5f);
-            float outer = 30f;
-            float inner = 16f;
-            for (int y = 0; y < size; y++)
-            {
-                for (int x = 0; x < size; x++)
-                {
-                    float d = Vector2.Distance(new Vector2(x, y), center);
-                    float alpha = 0f;
-                    if (d <= outer && d >= inner)
-                    {
-                        alpha = 1f - Mathf.InverseLerp(outer, inner, d) * 0.2f;
-                    }
-                    else if (d < inner)
-                    {
-                        alpha = 0.22f;
-                    }
-
-                    tex.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
-                }
-            }
-
-            tex.Apply();
-            _pickupSprite = Sprite.Create(tex, new Rect(0f, 0f, size, size), new Vector2(0.5f, 0.5f), 100f);
-            return _pickupSprite;
         }
     }
 }

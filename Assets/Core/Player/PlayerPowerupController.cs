@@ -1,6 +1,7 @@
 using UnityEngine;
 using StaticDrift.Items;
 using StaticDrift.Managers;
+using StaticDrift.VFX;
 namespace StaticDrift.Player
 {
     public class PlayerPowerupController : MonoBehaviour
@@ -40,8 +41,6 @@ namespace StaticDrift.Player
         private SpriteRenderer _glowSprite;
         private Transform _outlineParent;
         private ParticleSystem _itemAuraParticles;
-        private static Material _itemAuraAdditiveMaterial;
-
         private static PlayerPowerupController _activeInstance;
 
         public static float GlobalEnemySpeedMultiplier
@@ -291,40 +290,11 @@ namespace StaticDrift.Player
             ParticleSystemRenderer auraR = _itemAuraParticles.GetComponent<ParticleSystemRenderer>();
             auraR.sortingLayerID = _bodySprite.sortingLayerID;
             auraR.sortingOrder = _bodySprite.sortingOrder - 2;
-            Material auraMat = GetItemAuraAdditiveMaterial();
-            if (auraMat != null)
-            {
-                auraR.material = auraMat;
-            }
+            SharedVfxMaterials.ApplyUrpParticlesUnlit(auraR);
 
             auraR.renderMode = ParticleSystemRenderMode.Billboard;
 
             auraGo.SetActive(false);
-        }
-
-        private static Material GetItemAuraAdditiveMaterial()
-        {
-            if (_itemAuraAdditiveMaterial != null)
-            {
-                return _itemAuraAdditiveMaterial;
-            }
-
-            Shader shader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
-            if (shader == null)
-            {
-                shader = Shader.Find("Particles/Additive");
-            }
-
-            if (shader == null)
-            {
-                shader = Shader.Find("Legacy Shaders/Particles/Additive");
-            }
-            if (shader != null)
-            {
-                _itemAuraAdditiveMaterial = new Material(shader);
-            }
-
-            return _itemAuraAdditiveMaterial;
         }
 
         private void UpdateOutlineVisual()

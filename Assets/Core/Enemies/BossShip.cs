@@ -1,21 +1,57 @@
 using UnityEngine;
 using StaticDrift.Player;
+using StaticDrift.Projectiles;
 using System;
+using System.Collections.Generic;
 
 namespace StaticDrift.Enemies
 {
+    public enum BossCombatStyle
+    {
+        ChaseOnly = 0,
+        ChaseAndGun = 1,
+        ChaseAndSwarm = 2
+    }
+
     [RequireComponent(typeof(Rigidbody2D))]
-    [RequireComponent(typeof(CircleCollider2D))]
+    [RequireComponent(typeof(PolygonCollider2D))]
     [RequireComponent(typeof(SpriteRenderer))]
     public class BossShip : MonoBehaviour, IDamageable
     {
+        [SerializeField] private BossCombatStyle _combatStyle = BossCombatStyle.ChaseOnly;
         [SerializeField] private float _moveSpeed = 1.8f;
+        [SerializeField] private float _moveSpeedBonusPerLevel = 0.22f;
+        [SerializeField] private float _maxMoveSpeed = 3.35f;
         [SerializeField] private float _turnSpeed = 4.2f;
         [SerializeField] private float _orbitAmount = 1.7f;
         [SerializeField] private float _contactDamage = 12f;
         [SerializeField] private float _contactInterval = 0.45f;
-        [Tooltip("If set (e.g. on a prefab), used instead of Resources. Otherwise loads Resources/Gameplay/Boss1.")]
-        [SerializeField] private Sprite _bossSpriteOverride;
+        [Tooltip("Optional; if empty, child named Gun is used when ChaseAndGun.")]
+        [SerializeField] private Transform _gun;
+        [Tooltip("Required for ChaseAndGun when firing.")]
+        [SerializeField] private GameObject _bossProjectilePrefab;
+        [SerializeField] private float _bossProjectileDamage = 9f;
+        [SerializeField] private float _bossProjectileSpeed = 7.25f;
+        [SerializeField] private float _bossProjectileSpawnOffset = 0.42f;
+        [SerializeField] private float _baseFireInterval = 1.35f;
+        [SerializeField] private float _fireIntervalReductionPerLevel = 0.085f;
+        [SerializeField] private float _minFireInterval = 0.38f;
+        [Header("Chase + swarm (insect)")]
+        [SerializeField] private GameObject _mitePrefab;
+        [SerializeField] private float _baseSwarmInterval = 4.1f;
+        [SerializeField] private float _swarmIntervalReductionPerLevel = 0.32f;
+        [SerializeField] private float _minSwarmInterval = 1.75f;
+        [SerializeField] private float _initialSwarmDelay = 0.85f;
+        [SerializeField] private int _baseMiteCount = 3;
+        [SerializeField] private int _extraMitesPerLevel = 1;
+        [SerializeField] private int _maxMitesPerSpawn = 6;
+        [SerializeField] private float _miteSpawnRadius = 2.65f;
+        [SerializeField] private float _miteVisualScale = 0.38f;
+        [SerializeField] private float _miteMoveSpeed = 6.75f;
+        [SerializeField] private float _miteMaxHealth = 9f;
+        [SerializeField] private float _miteContactDamage = 5f;
+        [SerializeField] private float _miteContactInterval = 0.38f;
+        [SerializeField] private float _miteLifetimeSeconds = 6.5f;
 
         private Rigidbody2D _rigidbody2D;
         private SpriteRenderer _spriteRenderer;
@@ -26,6 +62,14 @@ namespace StaticDrift.Enemies
         private float _aliveTime;
         private bool _active;
         private static Sprite _proceduralBossSprite;
+
+        private float _effectiveMoveSpeed;
+        private float _nextFireTime;
+        private float _fireInterval;
+        private float _nextSwarmTime;
+        private float _swarmInterval;
+        private readonly List<BossMite> _activeMites = new List<BossMite>(12);
+        private int _bossLevel = 1;
 
         public float MaxHealth => _maxHealth;
         public float CurrentHealth => _currentHealth;
@@ -42,8 +86,22 @@ namespace StaticDrift.Enemies
             _rigidbody2D.bodyType = RigidbodyType2D.Kinematic;
             _rigidbody2D.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
 
-            Sprite visual = ResolveBossSprite();
-            _spriteRenderer.sprite = visual;
+            if (_gun == null)
+            {
+                Transform found = transform.Find("Gun");
+                if (found != null)
+                {
+                    _gun = found;
+                }
+            }
+
+            Sprite visual = _spriteRenderer.sprite;
+            if (visual == null)
+            {
+                visual = ResolveFallbackBossSprite();
+                _spriteRenderer.sprite = visual;
+            }
+
             _spriteRenderer.color = visual != null && visual == _proceduralBossSprite
                 ? new Color(0.9f, 0.45f, 0.3f, 1f)
                 : Color.white;
@@ -51,14 +109,35 @@ namespace StaticDrift.Enemies
             gameObject.SetActive(false);
         }
 
-        public void Activate(Transform target, float health, Vector3 spawnPosition)
+        public void Activate(Transform target, float health, Vector3 spawnPosition, int bossLevel)
         {
+            DespawnAllMites();
             _target = target;
+            _bossLevel = Mathf.Max(1, bossLevel);
             _maxHealth = Mathf.Max(1f, health);
             _currentHealth = _maxHealth;
             _nextContactTime = 0f;
             _aliveTime = 0f;
             _active = true;
+
+            float rawSpeed = _moveSpeed + (_bossLevel - 1) * _moveSpeedBonusPerLevel;
+            _effectiveMoveSpeed = Mathf.Min(_maxMoveSpeed, rawSpeed);
+
+            if (_combatStyle == BossCombatStyle.ChaseAndGun)
+            {
+                _fireInterval = Mathf.Max(
+                    _minFireInterval,
+                    _baseFireInterval - (_bossLevel - 1) * _fireIntervalReductionPerLevel);
+                _nextFireTime = Time.time + 0.35f;
+            }
+
+            if (_combatStyle == BossCombatStyle.ChaseAndSwarm)
+            {
+                _swarmInterval = Mathf.Max(
+                    _minSwarmInterval,
+                    _baseSwarmInterval - (_bossLevel - 1) * _swarmIntervalReductionPerLevel);
+                _nextSwarmTime = Time.time + _initialSwarmDelay;
+            }
 
             transform.position = spawnPosition;
             gameObject.SetActive(true);
@@ -67,7 +146,39 @@ namespace StaticDrift.Enemies
         public void Deactivate()
         {
             _active = false;
+            DespawnAllMites();
             gameObject.SetActive(false);
+        }
+
+        public void UnregisterMite(BossMite mite)
+        {
+            _activeMites.Remove(mite);
+        }
+
+        private void RegisterMite(BossMite mite)
+        {
+            if (mite != null)
+            {
+                _activeMites.Add(mite);
+            }
+        }
+
+        private void DespawnAllMites()
+        {
+            BossMite[] snapshot = _activeMites.ToArray();
+            _activeMites.Clear();
+            foreach (BossMite m in snapshot)
+            {
+                if (m != null)
+                {
+                    Destroy(m.gameObject);
+                }
+            }
+        }
+
+        private void OnDisable()
+        {
+            DespawnAllMites();
         }
 
         private void Update()
@@ -78,6 +189,93 @@ namespace StaticDrift.Enemies
             }
 
             _aliveTime += Time.deltaTime;
+
+            if (_combatStyle == BossCombatStyle.ChaseAndSwarm)
+            {
+                if (_mitePrefab != null && _target != null && Time.time >= _nextSwarmTime)
+                {
+                    SpawnMiteWave();
+                    _nextSwarmTime = Time.time + _swarmInterval;
+                }
+
+                return;
+            }
+
+            if (_combatStyle != BossCombatStyle.ChaseAndGun || _bossProjectilePrefab == null || _gun == null)
+            {
+                return;
+            }
+
+            if (_target == null)
+            {
+                return;
+            }
+
+            if (Time.time < _nextFireTime)
+            {
+                return;
+            }
+
+            Vector2 origin = _gun.position;
+            Vector2 toPlayer = (Vector2)_target.position - origin;
+            if (toPlayer.sqrMagnitude < 0.0004f)
+            {
+                return;
+            }
+
+            Vector2 dir = toPlayer.normalized;
+            Vector2 spawnPos = origin + dir * _bossProjectileSpawnOffset;
+            GameObject bolt = Instantiate(_bossProjectilePrefab, spawnPos, Quaternion.identity);
+            Projectile projectile = bolt.GetComponent<Projectile>();
+            if (projectile != null)
+            {
+                projectile.SetHostileToPlayerOnly(true);
+                projectile.SetBaseDamage(_bossProjectileDamage);
+                projectile.SetBaseSpeed(_bossProjectileSpeed);
+                projectile.Fire(dir);
+            }
+
+            _nextFireTime = Time.time + _fireInterval;
+        }
+
+        private void SpawnMiteWave()
+        {
+            if (_mitePrefab == null || _target == null)
+            {
+                return;
+            }
+
+            Sprite sprite = _spriteRenderer != null ? _spriteRenderer.sprite : null;
+            int count = Mathf.Min(_maxMitesPerSpawn, _baseMiteCount + (_bossLevel - 1) * _extraMitesPerLevel);
+            count = Mathf.Max(1, count);
+            Vector3 bossPos = transform.position;
+
+            for (int i = 0; i < count; i++)
+            {
+                float t = (i + 0.5f) / count;
+                float ang = t * Mathf.PI * 2f + _aliveTime * 0.12f;
+                Vector3 off = new Vector3(
+                    Mathf.Cos(ang) * _miteSpawnRadius,
+                    Mathf.Sin(ang) * _miteSpawnRadius * 0.62f,
+                    0f);
+                Vector3 pos = bossPos + off;
+                GameObject go = Instantiate(_mitePrefab, pos, Quaternion.identity);
+                BossMite mite = go.GetComponent<BossMite>();
+                if (mite != null)
+                {
+                    mite.Initialize(
+                        this,
+                        _target,
+                        sprite,
+                        _miteVisualScale,
+                        _miteMoveSpeed,
+                        _miteMaxHealth,
+                        _miteContactDamage,
+                        _miteContactInterval,
+                        _miteLifetimeSeconds);
+                    RegisterMite(mite);
+                }
+            }
         }
 
         private void FixedUpdate()
@@ -100,7 +298,7 @@ namespace StaticDrift.Enemies
             float orbitSign = Mathf.Sin(_aliveTime * 0.8f);
             Vector2 desiredDir = (toTargetNorm + tangent * _orbitAmount * orbitSign).normalized;
             float speedMul = PlayerPowerupController.GlobalEnemySpeedMultiplier;
-            Vector2 next = pos + desiredDir * (_moveSpeed * speedMul * Time.fixedDeltaTime);
+            Vector2 next = pos + desiredDir * (_effectiveMoveSpeed * speedMul * Time.fixedDeltaTime);
             _rigidbody2D.MovePosition(next);
 
             float desiredAngle = Mathf.Atan2(desiredDir.y, desiredDir.x) * Mathf.Rad2Deg - 90f;
@@ -155,13 +353,8 @@ namespace StaticDrift.Enemies
             _nextContactTime = now + _contactInterval;
         }
 
-        private Sprite ResolveBossSprite()
+        private Sprite ResolveFallbackBossSprite()
         {
-            if (_bossSpriteOverride != null)
-            {
-                return _bossSpriteOverride;
-            }
-
             Sprite loaded = Resources.Load<Sprite>("Gameplay/Boss1");
             if (loaded != null)
             {

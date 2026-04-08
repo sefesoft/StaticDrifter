@@ -185,7 +185,7 @@ MonoBehaviour:
     m_Bits: 1
   m_VolumeTrigger: {fileID: 0}
   m_VolumeFrameworkUpdateModeOption: 2
-  m_RenderPostProcessing: 0
+  m_RenderPostProcessing: 1
   m_Antialiasing: 0
   m_AntialiasingQuality: 2
   m_StopNaN: 0
@@ -365,6 +365,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 734927109}
+  - component: {fileID: 734927110}
   m_Layer: 0
   m_Name: GameplayControllers
   m_TagString: Untagged
@@ -390,6 +391,18 @@ Transform:
   - {fileID: 1300000002}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &734927110
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 734927108}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4a5c9e12f8034d6e9b7a2c8d1e0f3456, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::StaticDrift.Managers.GameplayPostProcessBootstrap
 --- !u!4 &1062008958 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 5902178827946732522, guid: 13559472bfb3303438c1668ba58577d2, type: 3}

@@ -1,5 +1,6 @@
 using UnityEngine;
 using StaticDrift.Enemies;
+using StaticDrift.Player;
 using StaticDrift.Pooling;
 using System.Collections.Generic;
 
@@ -38,6 +39,7 @@ namespace StaticDrift.Projectiles
         private readonly List<Collider2D> _piercedTargets = new List<Collider2D>(12);
         private static readonly Collider2D[] _splashHits = new Collider2D[24];
         private static Material _laserTrailMaterial;
+        private bool _hostileToPlayerOnly;
 
         private void Awake()
         {
@@ -61,6 +63,24 @@ namespace StaticDrift.Projectiles
         {
             _direction = direction.normalized;
             _age = 0f;
+        }
+
+        /// <summary>
+        /// When set, only colliders with <see cref="PlayerHealth"/> take damage (e.g. boss bullets).
+        /// </summary>
+        public void SetHostileToPlayerOnly(bool enabled)
+        {
+            _hostileToPlayerOnly = enabled;
+        }
+
+        public void SetBaseDamage(float damage)
+        {
+            _damage = Mathf.Max(0.1f, damage);
+        }
+
+        public void SetBaseSpeed(float speed)
+        {
+            _speed = Mathf.Max(0.5f, speed);
         }
 
         public void ApplyRuntimeModifiers(
@@ -92,6 +112,7 @@ namespace StaticDrift.Projectiles
             _splashDamageMultiplier = 0.45f;
             _remainingPierceHits = 0;
             _useLaserVisual = false;
+            _hostileToPlayerOnly = false;
             _piercedTargets.Clear();
             ApplyVisualState();
         }
@@ -151,6 +172,33 @@ namespace StaticDrift.Projectiles
 
         private bool TryApplyDamage(Collider2D other)
         {
+            if (_hostileToPlayerOnly)
+            {
+                PlayerHealth playerHealth = other.GetComponentInParent<PlayerHealth>();
+                if (playerHealth == null)
+                {
+                    return false;
+                }
+
+                if (_remainingPierceHits > 0 && _piercedTargets.Contains(other))
+                {
+                    return false;
+                }
+
+                float hostileDamage = _damage * _damageMultiplier;
+                playerHealth.TakeDamage(hostileDamage);
+                ApplySplashDamage(other, hostileDamage);
+                if (_remainingPierceHits > 0)
+                {
+                    _remainingPierceHits--;
+                    _piercedTargets.Add(other);
+                    return true;
+                }
+
+                Despawn();
+                return true;
+            }
+
             IDamageable damageable = other.GetComponent<IDamageable>();
             if (damageable == null)
             {
@@ -358,6 +406,20 @@ namespace StaticDrift.Projectiles
             go.transform.position = new Vector3(position.x, position.y, 0f);
             ProjectileSplashRing ring = go.AddComponent<ProjectileSplashRing>();
             ring.Initialize(radius, color, duration, sortingOrder);
+        }
+
+        /// <summary>Removes lingering AOE rings (e.g. Thermal upgrade) before/during hyperspace transitions.</summary>
+        public static void DestroyAllActive()
+        {
+            ProjectileSplashRing[] rings = Object.FindObjectsByType<ProjectileSplashRing>(FindObjectsSortMode.None);
+            int n = rings != null ? rings.Length : 0;
+            for (int i = 0; i < n; i++)
+            {
+                if (rings[i] != null)
+                {
+                    Object.Destroy(rings[i].gameObject);
+                }
+            }
         }
 
         private void Initialize(float radius, Color color, float duration, int sortingOrder)

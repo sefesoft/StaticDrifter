@@ -53,10 +53,16 @@ MonoBehaviour:
   _extraWaveDurationFractionPerWave: 0.1
   _bossEveryWaves: 5
   _bossBaseHealth: 220
-  _bossHealthPerCycle: 90
+  _bossHealthPerLevel: 55
+  _bossMaxHealth: 1200
   _runUpgradeController: {fileID: 0}
   _itemSpawner: {fileID: 0}
-  _bossShipPrefab: {fileID: 4011223344556677888, guid: 4c2f8e91d0b34a5689e7f123456789ab, type: 3}
+  _screenEdgeBarriers: {fileID: 0}
+  _screenEdgeCornerGunPrefab: {fileID: 155396002595443222, guid: 9a38590e890733d438b9a9efb72279b1, type: 3}
+  _bossPrefabs:
+  - {fileID: 4011223344556677888, guid: 4c2f8e91d0b34a5689e7f123456789ab, type: 3}
+  - {fileID: 4011223344556677888, guid: 0daa42388cb17e445a828e0f0c80189d, type: 3}
+  - {fileID: 4011223344556677888, guid: 1b2f426739377aa41b8624561e0da330, type: 3}
   _bossWarningDurationSeconds: 1.6
   _bossExplosionDurationSeconds: 1.1
   _bossDeathExplosionIntensity: 1.9
