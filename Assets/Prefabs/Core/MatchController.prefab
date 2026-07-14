@@ -46,6 +46,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::StaticDrift.Managers.MatchController
   _playerPrefab: {fileID: 7018467754607737423, guid: 924ba42de7d816d4a80ce7d370b4e4b4, type: 3}
   _gameplayHUDPrefab: {fileID: 3412436041927493452, guid: 21f62c5857599ff489d0560e7225bdba, type: 3}
+  _pauseMenuRootPrefab: {fileID: 2928004520797552158, guid: 845ecaeaa76ae774a942e85aa284f176, type: 3}
+  _pauseAchievementsWindowPrefab: {fileID: 6063893965696129124, guid: 54d906cc48c64134195b1611af1f8cfe, type: 3}
+  _pauseInfoWindowPrefab: {fileID: 4516868280704959180, guid: 284a5932639651141bb8a869f35d0c11, type: 3}
   _playerSpawnPosition: {x: 0, y: 0, z: 0}
   _pauseTimerWhenPaused: 1
   _waveSpawner: {fileID: 0}

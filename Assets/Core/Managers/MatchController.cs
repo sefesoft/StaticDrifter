@@ -33,6 +33,10 @@ namespace StaticDrift.Managers
 
         [SerializeField] private GameObject _playerPrefab;
         [SerializeField] private GameObject _gameplayHUDPrefab;
+        [Header("Pause UI prefabs (Assets/Prefabs/UI — bake via Static Drift menu)")]
+        [SerializeField] private GameObject _pauseMenuRootPrefab;
+        [SerializeField] private GameObject _pauseAchievementsWindowPrefab;
+        [SerializeField] private GameObject _pauseInfoWindowPrefab;
         [SerializeField] private Vector3 _playerSpawnPosition = Vector3.zero;
         [SerializeField] private bool _pauseTimerWhenPaused = true;
         [SerializeField] private EnemyWaveSpawner _waveSpawner;
@@ -1299,7 +1303,341 @@ namespace StaticDrift.Managers
         private void CreatePauseOverlay()
         {
             DestroyPauseOverlay();
+            if (TryCreatePauseOverlayFromPrefabs())
+            {
+                return;
+            }
 
+            CreatePauseOverlayProcedural();
+        }
+
+        private bool TryCreatePauseOverlayFromPrefabs()
+        {
+            if (_pauseMenuRootPrefab == null || _pauseAchievementsWindowPrefab == null || _pauseInfoWindowPrefab == null)
+            {
+                return false;
+            }
+
+            GameObject canvasGo = new GameObject("PauseCanvas");
+            Canvas canvas = canvasGo.AddComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            canvas.overrideSorting = true;
+            canvas.sortingOrder = 520;
+            CanvasScaler scaler = canvasGo.AddComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1920f, 1080f);
+            canvasGo.AddComponent<GraphicRaycaster>();
+            UiSelectionKeepAlive pauseKeepAlive = canvasGo.AddComponent<UiSelectionKeepAlive>();
+
+            GameObject panel = new GameObject("Panel");
+            panel.transform.SetParent(canvasGo.transform, false);
+            RectTransform panelRect = panel.AddComponent<RectTransform>();
+            panelRect.anchorMin = Vector2.zero;
+            panelRect.anchorMax = Vector2.one;
+            panelRect.offsetMin = Vector2.zero;
+            panelRect.offsetMax = Vector2.zero;
+            Image panelImage = panel.AddComponent<Image>();
+            panelImage.color = new Color(0.02f, 0.03f, 0.06f, 0.86f);
+            MenuPanelPointerGuard pausePointerGuard = panel.AddComponent<MenuPanelPointerGuard>();
+
+            GameObject pauseMenuRoot = Instantiate(_pauseMenuRootPrefab, panel.transform);
+            RectTransform pauseMenuRect = pauseMenuRoot.GetComponent<RectTransform>();
+            if (pauseMenuRect != null)
+            {
+                pauseMenuRect.anchorMin = Vector2.zero;
+                pauseMenuRect.anchorMax = Vector2.one;
+                pauseMenuRect.offsetMin = Vector2.zero;
+                pauseMenuRect.offsetMax = Vector2.zero;
+                pauseMenuRect.anchoredPosition = UseMobileUpgradeLayout() ? new Vector2(0f, 150f) : new Vector2(0f, 90f);
+            }
+
+            PauseMainMenuRefs menuRefs = pauseMenuRoot.GetComponent<PauseMainMenuRefs>();
+            if (menuRefs == null)
+            {
+                Destroy(canvasGo);
+                return false;
+            }
+
+            bool useMobilePauseLayout = UseMobileUpgradeLayout();
+            Vector2 pauseBtnSize = useMobilePauseLayout ? new Vector2(320f, 80f) : new Vector2(260f, 72f);
+            void StylePauseMenuButton(Button b)
+            {
+                if (b == null)
+                {
+                    return;
+                }
+
+                SetRectSize(b, pauseBtnSize);
+                ConfigureButtonText(
+                    b,
+                    useMobilePauseLayout ? 42f : 36f,
+                    useMobilePauseLayout ? 26f : 18f,
+                    useMobilePauseLayout ? 42f : 36f,
+                    new Vector2(22f, 16f),
+                    new Vector2(-22f, -14f),
+                    useMobilePauseLayout ? -6f : -10f);
+            }
+
+            StylePauseMenuButton(menuRefs.ResumeButton);
+            StylePauseMenuButton(menuRefs.AchievementsFromPauseButton);
+            StylePauseMenuButton(menuRefs.InfoFromPauseButton);
+            StylePauseMenuButton(menuRefs.RetryFromPauseButton);
+            StylePauseMenuButton(menuRefs.TitleFromPauseButton);
+
+            bool useMobileLayout = useMobilePauseLayout;
+            Vector2 intendedSize = useMobileLayout ? new Vector2(1500f, 1040f) : new Vector2(1180f, 900f);
+
+            RectTransform safeHostAch = CreatePauseHelpSafeAreaHost(panel.transform);
+            GameObject achievementsWindow = Instantiate(_pauseAchievementsWindowPrefab, safeHostAch);
+            achievementsWindow.transform.SetAsLastSibling();
+            RectTransform achievementsWindowRect = achievementsWindow.GetComponent<RectTransform>();
+            if (achievementsWindowRect != null)
+            {
+                achievementsWindowRect.anchorMin = new Vector2(0.5f, 0.5f);
+                achievementsWindowRect.anchorMax = new Vector2(0.5f, 0.5f);
+                achievementsWindowRect.pivot = new Vector2(0.5f, 0.5f);
+                achievementsWindowRect.sizeDelta = intendedSize;
+                achievementsWindowRect.localScale = Vector3.one;
+            }
+
+            PauseAchievementsWindowRefs achRefs = achievementsWindow.GetComponent<PauseAchievementsWindowRefs>();
+            TMP_Text achievementsBodyText = achRefs != null ? achRefs.AchievementBodyText : null;
+            Button achievementsCloseButton = achRefs != null ? achRefs.CloseAchievementsButton : null;
+            if (achievementsCloseButton != null)
+            {
+                achievementsCloseButton.onClick.RemoveAllListeners();
+                SetRectSize(achievementsCloseButton, useMobileLayout ? new Vector2(100f, 100f) : new Vector2(88f, 88f));
+                RectTransform achCloseRt = achievementsCloseButton.GetComponent<RectTransform>();
+                if (achCloseRt != null)
+                {
+                    achCloseRt.anchorMin = new Vector2(1f, 1f);
+                    achCloseRt.anchorMax = new Vector2(1f, 1f);
+                    achCloseRt.pivot = new Vector2(1f, 1f);
+                    float inset = useMobileLayout ? 14f : 12f;
+                    achCloseRt.anchoredPosition = new Vector2(-inset, -inset);
+                }
+
+                ApplyPauseHelpCloseButtonStyle(achievementsCloseButton, useMobileLayout);
+                achievementsCloseButton.onClick.AddListener(() =>
+                {
+                    AudioManager.EnsureExists().PlayUiConfirm();
+                    achievementsWindow.SetActive(false);
+                    if (pauseMenuRoot != null)
+                    {
+                        pauseMenuRoot.SetActive(true);
+                    }
+
+                    SetGameplayHudPauseButtonVisible(true);
+                    Button reopen = menuRefs.AchievementsFromPauseButton;
+                    if (reopen != null)
+                    {
+                        SetSelectedButton(reopen);
+                        pauseKeepAlive.DefaultSelection = reopen.gameObject;
+                        pausePointerGuard.DefaultSelection = reopen.gameObject;
+                    }
+                });
+            }
+
+            if (achievementsWindowRect != null && safeHostAch != null)
+            {
+                ApplyPauseHelpWindowFitInsideHost(achievementsWindowRect, safeHostAch, intendedSize);
+            }
+
+            achievementsWindow.SetActive(false);
+
+            Button infoCloseButton = null;
+            RectTransform safeHostInfo = CreatePauseHelpSafeAreaHost(panel.transform);
+            GameObject infoWindow = Instantiate(_pauseInfoWindowPrefab, safeHostInfo);
+            infoWindow.transform.SetAsLastSibling();
+            RectTransform infoWindowRect = infoWindow.GetComponent<RectTransform>();
+            if (infoWindowRect != null)
+            {
+                infoWindowRect.anchorMin = new Vector2(0.5f, 0.5f);
+                infoWindowRect.anchorMax = new Vector2(0.5f, 0.5f);
+                infoWindowRect.pivot = new Vector2(0.5f, 0.5f);
+                infoWindowRect.sizeDelta = intendedSize;
+                infoWindowRect.localScale = Vector3.one;
+            }
+
+            PauseInfoWindowRefs infoRefs = infoWindow.GetComponent<PauseInfoWindowRefs>();
+            if (infoRefs != null && infoRefs.ScrollInput != null && infoRefs.ItemsScroll != null && infoRefs.UpgradesScroll != null)
+            {
+                infoRefs.ScrollInput.SetScrollRects(infoRefs.ItemsScroll, infoRefs.UpgradesScroll);
+            }
+
+            if (infoRefs != null && infoRefs.CloseInfoButton != null)
+            {
+                infoCloseButton = infoRefs.CloseInfoButton;
+                infoCloseButton.onClick.RemoveAllListeners();
+                SetRectSize(infoCloseButton, useMobileLayout ? new Vector2(100f, 100f) : new Vector2(88f, 88f));
+                RectTransform infoCloseRt = infoCloseButton.GetComponent<RectTransform>();
+                if (infoCloseRt != null)
+                {
+                    infoCloseRt.anchorMin = new Vector2(1f, 1f);
+                    infoCloseRt.anchorMax = new Vector2(1f, 1f);
+                    infoCloseRt.pivot = new Vector2(1f, 1f);
+                    float inset = useMobileLayout ? 14f : 12f;
+                    infoCloseRt.anchoredPosition = new Vector2(-inset, -inset);
+                }
+
+                ApplyPauseHelpCloseButtonStyle(infoCloseButton, useMobileLayout);
+                infoCloseButton.onClick.AddListener(() =>
+                {
+                    AudioManager.EnsureExists().PlayUiConfirm();
+                    infoWindow.SetActive(false);
+                    if (pauseMenuRoot != null)
+                    {
+                        pauseMenuRoot.SetActive(true);
+                    }
+
+                    SetGameplayHudPauseButtonVisible(true);
+                    Button reopen = menuRefs.InfoFromPauseButton;
+                    if (reopen != null)
+                    {
+                        SetSelectedButton(reopen);
+                        pauseKeepAlive.DefaultSelection = reopen.gameObject;
+                        pausePointerGuard.DefaultSelection = reopen.gameObject;
+                    }
+                });
+            }
+
+            if (infoRefs != null && infoRefs.ItemsTabButton != null && infoRefs.UpgradesTabButton != null && infoRefs.ItemsScroll != null && infoRefs.UpgradesScroll != null)
+            {
+                Button itemsTabButton = infoRefs.ItemsTabButton;
+                Button upgradesTabButton = infoRefs.UpgradesTabButton;
+                ScrollRect itemsScroll = infoRefs.ItemsScroll;
+                ScrollRect upgradesScroll = infoRefs.UpgradesScroll;
+                itemsTabButton.onClick.RemoveAllListeners();
+                itemsTabButton.onClick.AddListener(() =>
+                {
+                    AudioManager.EnsureExists().PlayUiConfirm();
+                    SetPauseInfoTab(itemsScroll.gameObject, upgradesScroll.gameObject, itemsTabButton, upgradesTabButton, true);
+                    itemsScroll.verticalNormalizedPosition = 1f;
+                });
+                upgradesTabButton.onClick.RemoveAllListeners();
+                upgradesTabButton.onClick.AddListener(() =>
+                {
+                    AudioManager.EnsureExists().PlayUiConfirm();
+                    SetPauseInfoTab(itemsScroll.gameObject, upgradesScroll.gameObject, itemsTabButton, upgradesTabButton, false);
+                    upgradesScroll.verticalNormalizedPosition = 1f;
+                });
+                SetPauseInfoTab(itemsScroll.gameObject, upgradesScroll.gameObject, itemsTabButton, upgradesTabButton, true);
+            }
+
+            if (infoCloseButton != null)
+            {
+                infoCloseButton.transform.SetAsLastSibling();
+            }
+
+            if (infoWindowRect != null && safeHostInfo != null)
+            {
+                ApplyPauseHelpWindowFitInsideHost(infoWindowRect, safeHostInfo, intendedSize);
+            }
+
+            infoWindow.SetActive(false);
+
+            if (menuRefs.ResumeButton != null)
+            {
+                menuRefs.ResumeButton.onClick.RemoveAllListeners();
+                menuRefs.ResumeButton.onClick.AddListener(() =>
+                {
+                    AudioManager.EnsureExists().PlayUiConfirm();
+                    ResumeFromPause();
+                });
+            }
+
+            if (menuRefs.AchievementsFromPauseButton != null)
+            {
+                menuRefs.AchievementsFromPauseButton.onClick.RemoveAllListeners();
+                menuRefs.AchievementsFromPauseButton.onClick.AddListener(() =>
+                {
+                    AudioManager.EnsureExists().PlayUiConfirm();
+                    AchievementListPanel.RefreshBodyText(achievementsBodyText);
+                    SetGameplayHudPauseButtonVisible(false);
+                    pauseMenuRoot.SetActive(false);
+                    if (infoWindow != null)
+                    {
+                        infoWindow.SetActive(false);
+                    }
+
+                    if (achievementsWindow != null)
+                    {
+                        achievementsWindow.SetActive(true);
+                        achievementsWindow.transform.SetAsLastSibling();
+                    }
+
+                    if (achievementsCloseButton != null)
+                    {
+                        SetSelectedButton(achievementsCloseButton);
+                        pauseKeepAlive.DefaultSelection = achievementsCloseButton.gameObject;
+                        pausePointerGuard.DefaultSelection = achievementsCloseButton.gameObject;
+                    }
+                });
+            }
+
+            if (menuRefs.InfoFromPauseButton != null)
+            {
+                menuRefs.InfoFromPauseButton.onClick.RemoveAllListeners();
+                menuRefs.InfoFromPauseButton.onClick.AddListener(() =>
+                {
+                    AudioManager.EnsureExists().PlayUiConfirm();
+                    SetGameplayHudPauseButtonVisible(false);
+                    pauseMenuRoot.SetActive(false);
+                    if (achievementsWindow != null)
+                    {
+                        achievementsWindow.SetActive(false);
+                    }
+
+                    if (infoWindow != null)
+                    {
+                        infoWindow.SetActive(true);
+                    }
+
+                    if (infoCloseButton != null)
+                    {
+                        SetSelectedButton(infoCloseButton);
+                        pauseKeepAlive.DefaultSelection = infoCloseButton.gameObject;
+                        pausePointerGuard.DefaultSelection = infoCloseButton.gameObject;
+                    }
+                });
+            }
+
+            if (menuRefs.RetryFromPauseButton != null)
+            {
+                menuRefs.RetryFromPauseButton.onClick.RemoveAllListeners();
+                menuRefs.RetryFromPauseButton.onClick.AddListener(() =>
+                {
+                    AudioManager.EnsureExists().PlayUiConfirm();
+                    _isPaused = false;
+                    Time.timeScale = 1f;
+                    SceneManager.LoadScene("Gameplay");
+                });
+            }
+
+            if (menuRefs.TitleFromPauseButton != null)
+            {
+                menuRefs.TitleFromPauseButton.onClick.RemoveAllListeners();
+                menuRefs.TitleFromPauseButton.onClick.AddListener(() =>
+                {
+                    AudioManager.EnsureExists().PlayUiConfirm();
+                    _isPaused = false;
+                    Time.timeScale = 1f;
+                    SceneManager.LoadScene("TitleScreen");
+                });
+            }
+
+            if (menuRefs.ResumeButton != null)
+            {
+                SetSelectedButton(menuRefs.ResumeButton);
+                pauseKeepAlive.DefaultSelection = menuRefs.ResumeButton.gameObject;
+                pausePointerGuard.DefaultSelection = menuRefs.ResumeButton.gameObject;
+            }
+
+            return true;
+        }
+
+        private void CreatePauseOverlayProcedural()
+        {
             GameObject canvasGo = new GameObject("PauseCanvas");
             Canvas canvas = canvasGo.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
@@ -1857,7 +2195,12 @@ namespace StaticDrift.Managers
                 out RectTransform upgradesContentRect);
             upgradesScroll.gameObject.SetActive(false);
 
-            PauseHelpScrollInput helpScrollInput = window.AddComponent<PauseHelpScrollInput>();
+            PauseHelpScrollInput helpScrollInput = window.GetComponent<PauseHelpScrollInput>();
+            if (helpScrollInput == null)
+            {
+                helpScrollInput = window.AddComponent<PauseHelpScrollInput>();
+            }
+
             helpScrollInput.SetScrollRects(itemsScroll, upgradesScroll);
 
             itemsTabButton.onClick.RemoveAllListeners();
@@ -3317,76 +3660,4 @@ namespace StaticDrift.Managers
         }
     }
 
-    /// <summary>
-    /// Drives pause help ScrollRects with keyboard (Page Up/Down), gamepad left stick; touch drag and mouse wheel use Unity ScrollRect.
-    /// </summary>
-    public class PauseHelpScrollInput : MonoBehaviour
-    {
-        [SerializeField] private ScrollRect _itemsScroll;
-        [SerializeField] private ScrollRect _upgradesScroll;
-
-        private void Update()
-        {
-            ScrollRect active = GetActiveScroll();
-            if (active == null || !active.vertical)
-            {
-                return;
-            }
-
-            float delta = 0f;
-            float dt = Time.unscaledDeltaTime;
-
-            Keyboard kb = Keyboard.current;
-            if (kb != null)
-            {
-                if (kb.pageDownKey.isPressed)
-                {
-                    delta -= 1.8f * dt;
-                }
-
-                if (kb.pageUpKey.isPressed)
-                {
-                    delta += 1.8f * dt;
-                }
-            }
-
-            Gamepad gp = Gamepad.current;
-            if (gp != null)
-            {
-                float y = gp.leftStick.ReadValue().y;
-                if (Mathf.Abs(y) > 0.18f)
-                {
-                    delta += y * 2.2f * dt;
-                }
-            }
-
-            if (Mathf.Abs(delta) < 0.00001f)
-            {
-                return;
-            }
-
-            active.verticalNormalizedPosition = Mathf.Clamp01(active.verticalNormalizedPosition + delta);
-        }
-
-        private ScrollRect GetActiveScroll()
-        {
-            if (_upgradesScroll != null && _upgradesScroll.gameObject.activeInHierarchy)
-            {
-                return _upgradesScroll;
-            }
-
-            if (_itemsScroll != null && _itemsScroll.gameObject.activeInHierarchy)
-            {
-                return _itemsScroll;
-            }
-
-            return null;
-        }
-
-        public void SetScrollRects(ScrollRect items, ScrollRect upgrades)
-        {
-            _itemsScroll = items;
-            _upgradesScroll = upgrades;
-        }
-    }
 }

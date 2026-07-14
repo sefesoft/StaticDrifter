@@ -387,6 +387,10 @@ MonoBehaviour:
   _gameplaySceneName: Gameplay
   _backgroundSprite: {fileID: 6311979062447520631, guid: f66cf908a6d937249b50bf241d8fb7a5, type: 3}
   _titleSprite: {fileID: -7400915380585071938, guid: 60d72965794b5044bb012c4453960de4, type: 3}
+  _mainMenuPrefab: {fileID: 1168635911747526984, guid: 859950d2a2aac004a9eee96a8f783ab9, type: 3}
+  _settingsMenuPrefab: {fileID: 2919764851233837809, guid: 28e535d442335c8459e29a5d5d0fced6, type: 3}
+  _leaderboardMenuPrefab: {fileID: 6194388698292362873, guid: 06fc8daa94a64c44ebb64719c8bc78e2, type: 3}
+  _achievementsMenuPrefab: {fileID: 7362186993890681854, guid: 0f9e1fe23244b31448b7ac9fa3c1aadb, type: 3}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

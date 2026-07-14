@@ -25,6 +25,6 @@ Backlog for possible features. Not committed work; use this to track what we mig
 
 ## Content & hazards
 
-- [ ] **Boss improvements**: Add more boss types and create specific behavior for each type.
+- [X] **Boss improvements**: Add more boss types and create specific behavior for each type.
 - [X] **More asteroid types**: Create more asteroid types with different characteristics—e.g. ice asteroids that freeze you on touch, obsidian asteroids that require more shots to destroy and do more damage.
 - [ ] **Environment traps**: e.g. lasers on the edge of the screen that turn on randomly.

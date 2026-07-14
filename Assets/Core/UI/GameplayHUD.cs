@@ -47,6 +47,10 @@ namespace StaticDrift.UI
         [SerializeField] private string _statsFormat = "HP: {0:F0} / {1:F0}";
         [SerializeField] private bool _createTouchControls = true;
         [SerializeField] private bool _applyPauseLayoutFromCode;
+        [SerializeField] private float _rotateJoystickDeadZone = 0.12f;
+        [SerializeField, Range(0.2f, 0.8f)] private float _rotateJoystickZoneScreenWidth = 0.5f;
+        [SerializeField] private Vector2 _rotateJoystickHomeNormalized = new Vector2(0.25f, 0.25f);
+        [SerializeField] private float _rotateJoystickLimitRingScale = 2.2f;
 
         private PlayerHealth _playerHealth;
         private PlayerController _playerController;
@@ -54,11 +58,16 @@ namespace StaticDrift.UI
         private bool _rotateLeftHeld;
         private bool _rotateRightHeld;
         private bool _accelerateHeld;
+        private int _rotateJoystickPointerId = -1;
+        private bool _rotateJoystickHeld;
+        private Vector2 _rotateJoystickCenterLocal;
+        private RectTransform _rotateJoystickRingRect;
         private readonly Dictionary<string, RectTransform> _controlVisuals = new Dictionary<string, RectTransform>();
         private readonly Dictionary<string, Vector2> _controlVisualHomePositions = new Dictionary<string, Vector2>();
         private readonly List<GameObject> _touchGameplayButtonRoots = new List<GameObject>(3);
         private bool _touchGameplayButtonsVisible = true;
         private static Sprite _circleButtonSprite;
+        private static Sprite _circleRingSprite;
 
         private const string PlayerTag = "Player";
 
@@ -329,9 +338,177 @@ namespace StaticDrift.UI
             _controlVisuals.Clear();
             _controlVisualHomePositions.Clear();
             _touchGameplayButtonRoots.Clear();
-            WireOneTouchZone(_rotateLeftButton, "RotateLeftButton");
-            WireOneTouchZone(_rotateRightButton, "RotateRightButton");
+
+            if (GameSettings.TouchRotationMode == TouchRotationMode.VirtualJoystick)
+            {
+                if (_rotateRightButton != null)
+                {
+                    _rotateRightButton.SetActive(false);
+                }
+
+                WireRotateJoystickZone(_rotateLeftButton, "RotateLeftButton");
+            }
+            else
+            {
+                DeactivateJoystickOnlyVisuals();
+                if (_rotateRightButton != null)
+                {
+                    _rotateRightButton.SetActive(true);
+                }
+
+                WireOneTouchZone(_rotateLeftButton, "RotateLeftButton");
+                WireOneTouchZone(_rotateRightButton, "RotateRightButton");
+            }
+
             WireOneTouchZone(_accelerateButton, "AccelerateButton");
+        }
+
+        private void DeactivateJoystickOnlyVisuals()
+        {
+            if (_rotateLeftButton == null)
+            {
+                return;
+            }
+
+            Transform ring = _rotateLeftButton.transform.Find("LimitRing");
+            if (ring != null)
+            {
+                ring.gameObject.SetActive(false);
+            }
+        }
+
+        private void WireRotateJoystickZone(GameObject zoneRoot, string objectName)
+        {
+            if (zoneRoot == null)
+            {
+                return;
+            }
+
+            ExpandRotateJoystickZoneRect(zoneRoot);
+
+            EventTrigger old = zoneRoot.GetComponent<EventTrigger>();
+            if (old != null)
+            {
+                Destroy(old);
+            }
+
+            Transform visualTf = zoneRoot.transform.Find("Visual");
+            if (visualTf == null)
+            {
+                Debug.LogWarning("[GameplayHUD] Rotate joystick zone '" + objectName + "' has no child 'Visual'.", zoneRoot);
+                _touchGameplayButtonRoots.Add(zoneRoot);
+                return;
+            }
+
+            RectTransform visualRect = visualTf.GetComponent<RectTransform>();
+            Image visualImg = visualTf.GetComponent<Image>();
+            if (visualImg != null && visualImg.sprite == null)
+            {
+                visualImg.sprite = GetCircleButtonSprite();
+                visualImg.type = Image.Type.Sliced;
+            }
+
+            if (visualRect != null)
+            {
+                EnsureJoystickVisualAnchors(visualRect);
+                _controlVisuals[objectName] = visualRect;
+                ApplyRotateJoystickHomePosition(zoneRoot, visualRect, objectName);
+                EnsureRotateJoystickLimitRing(zoneRoot, visualRect, objectName);
+                HideJoystickLabel(zoneRoot);
+            }
+
+            AddRotateJoystickEvents(zoneRoot, objectName);
+            _touchGameplayButtonRoots.Add(zoneRoot);
+        }
+
+        private void HideJoystickLabel(GameObject zoneRoot)
+        {
+            // Remove the "L" (or any label) from the joystick visuals.
+            TMP_Text tmp = zoneRoot.GetComponentInChildren<TMP_Text>(true);
+            if (tmp != null)
+            {
+                tmp.text = string.Empty;
+                tmp.enabled = false;
+            }
+
+            Text uiText = zoneRoot.GetComponentInChildren<Text>(true);
+            if (uiText != null)
+            {
+                uiText.text = string.Empty;
+                uiText.enabled = false;
+            }
+        }
+
+        private void ApplyRotateJoystickHomePosition(GameObject zoneRoot, RectTransform visualRect, string objectName)
+        {
+            RectTransform zoneRect = zoneRoot.GetComponent<RectTransform>();
+            if (zoneRect == null)
+            {
+                _controlVisualHomePositions[objectName] = visualRect.anchoredPosition;
+                return;
+            }
+
+            Vector2 n = new Vector2(Mathf.Clamp01(_rotateJoystickHomeNormalized.x), Mathf.Clamp01(_rotateJoystickHomeNormalized.y));
+            Vector2 size = zoneRect.rect.size;
+            Vector2 local = new Vector2((n.x - 0.5f) * size.x, (n.y - 0.5f) * size.y);
+            visualRect.anchoredPosition = local;
+            _controlVisualHomePositions[objectName] = local;
+        }
+
+        private void EnsureRotateJoystickLimitRing(GameObject zoneRoot, RectTransform visualRect, string objectName)
+        {
+            Transform ringTf = zoneRoot.transform.Find("LimitRing");
+            if (ringTf == null)
+            {
+                GameObject ringGo = new GameObject("LimitRing", typeof(RectTransform), typeof(Image));
+                ringGo.transform.SetParent(zoneRoot.transform, false);
+                ringTf = ringGo.transform;
+                ringTf.SetSiblingIndex(visualRect.transform.GetSiblingIndex());
+            }
+
+            RectTransform ringRect = ringTf.GetComponent<RectTransform>();
+            Image ringImg = ringTf.GetComponent<Image>();
+            if (ringRect == null || ringImg == null)
+            {
+                return;
+            }
+
+            EnsureJoystickVisualAnchors(ringRect);
+            ringImg.raycastTarget = false;
+            ringImg.sprite = GetCircleRingSprite();
+            ringImg.type = Image.Type.Sliced;
+            ringImg.color = new Color(0.2f, 0.55f, 1f, 0.8f);
+
+            float scale = Mathf.Clamp(_rotateJoystickLimitRingScale, 1.2f, 4f);
+            ringRect.sizeDelta = visualRect.sizeDelta * scale;
+            ringRect.anchoredPosition = _controlVisualHomePositions.TryGetValue(objectName, out Vector2 home) ? home : visualRect.anchoredPosition;
+            ringRect.gameObject.SetActive(true);
+            _rotateJoystickRingRect = ringRect;
+        }
+
+        private void ExpandRotateJoystickZoneRect(GameObject zoneRoot)
+        {
+            RectTransform zoneRect = zoneRoot.GetComponent<RectTransform>();
+            if (zoneRect == null)
+            {
+                return;
+            }
+
+            // Bigger, easier-to-hit left-side rectangle zone.
+            float w = Mathf.Clamp01(_rotateJoystickZoneScreenWidth);
+            zoneRect.anchorMin = new Vector2(0f, 0f);
+            zoneRect.anchorMax = new Vector2(Mathf.Max(0.05f, w), 1f);
+            zoneRect.pivot = new Vector2(0.5f, 0.5f);
+            zoneRect.offsetMin = Vector2.zero;
+            zoneRect.offsetMax = Vector2.zero;
+        }
+
+        private static void EnsureJoystickVisualAnchors(RectTransform visualRect)
+        {
+            // Make anchoredPosition match parent-local touch coordinates (prevents big offsets).
+            visualRect.anchorMin = new Vector2(0.5f, 0.5f);
+            visualRect.anchorMax = new Vector2(0.5f, 0.5f);
+            visualRect.pivot = new Vector2(0.5f, 0.5f);
         }
 
         private void WireOneTouchZone(GameObject zoneRoot, string objectName)
@@ -490,6 +667,130 @@ namespace StaticDrift.UI
                 SetControlState(objectName, false);
                 ResetControlVisual(objectName);
             });
+        }
+
+        private void AddRotateJoystickEvents(GameObject target, string objectName)
+        {
+            EventTrigger trigger = target.AddComponent<EventTrigger>();
+            trigger.triggers = new List<EventTrigger.Entry>();
+
+            AddTrigger(trigger, EventTriggerType.PointerDown, eventData =>
+            {
+                StartRotateJoystickTouch(objectName, eventData as PointerEventData);
+            });
+            AddTrigger(trigger, EventTriggerType.Drag, eventData =>
+            {
+                UpdateRotateJoystickTouch(objectName, eventData as PointerEventData);
+            });
+            AddTrigger(trigger, EventTriggerType.PointerUp, eventData =>
+            {
+                EndRotateJoystickTouch(objectName, eventData as PointerEventData);
+            });
+            AddTrigger(trigger, EventTriggerType.PointerExit, eventData =>
+            {
+                EndRotateJoystickTouch(objectName, eventData as PointerEventData);
+            });
+        }
+
+        private void StartRotateJoystickTouch(string objectName, PointerEventData pointerData)
+        {
+            if (pointerData == null)
+            {
+                return;
+            }
+
+            if (!_controlVisuals.TryGetValue(objectName, out RectTransform visualRect) || visualRect == null)
+            {
+                return;
+            }
+
+            RectTransform zoneRect = visualRect.parent as RectTransform;
+            if (zoneRect == null)
+            {
+                return;
+            }
+
+            EnsureJoystickVisualAnchors(visualRect);
+
+            if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(zoneRect, pointerData.position, pointerData.pressEventCamera, out Vector2 localPoint))
+            {
+                return;
+            }
+
+            _rotateJoystickPointerId = pointerData.pointerId;
+            _rotateJoystickHeld = true;
+            _rotateJoystickCenterLocal = localPoint;
+            visualRect.anchoredPosition = localPoint;
+            if (_rotateJoystickRingRect != null)
+            {
+                EnsureJoystickVisualAnchors(_rotateJoystickRingRect);
+                _rotateJoystickRingRect.anchoredPosition = localPoint;
+            }
+            UpdateRotateFromJoystickAxis(0f);
+        }
+
+        private void UpdateRotateJoystickTouch(string objectName, PointerEventData pointerData)
+        {
+            if (!_rotateJoystickHeld || pointerData == null || pointerData.pointerId != _rotateJoystickPointerId)
+            {
+                return;
+            }
+
+            if (!_controlVisuals.TryGetValue(objectName, out RectTransform visualRect) || visualRect == null)
+            {
+                return;
+            }
+
+            RectTransform zoneRect = visualRect.parent as RectTransform;
+            if (zoneRect == null)
+            {
+                return;
+            }
+
+            if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(zoneRect, pointerData.position, pointerData.pressEventCamera, out Vector2 localPoint))
+            {
+                return;
+            }
+
+            float radius = Mathf.Max(8f, visualRect.sizeDelta.x * 0.5f);
+            Vector2 offset = localPoint - _rotateJoystickCenterLocal;
+            if (offset.sqrMagnitude > radius * radius)
+            {
+                offset = offset.normalized * radius;
+            }
+
+            visualRect.anchoredPosition = _rotateJoystickCenterLocal + offset;
+            float axisX = Mathf.Clamp(offset.x / radius, -1f, 1f);
+            UpdateRotateFromJoystickAxis(axisX);
+        }
+
+        private void EndRotateJoystickTouch(string objectName, PointerEventData pointerData)
+        {
+            if (!_rotateJoystickHeld)
+            {
+                return;
+            }
+
+            if (pointerData != null && pointerData.pointerId != _rotateJoystickPointerId)
+            {
+                return;
+            }
+
+            _rotateJoystickHeld = false;
+            _rotateJoystickPointerId = -1;
+            UpdateRotateFromJoystickAxis(0f);
+            ResetControlVisual(objectName);
+            if (_rotateJoystickRingRect != null && _controlVisualHomePositions.TryGetValue(objectName, out Vector2 home))
+            {
+                _rotateJoystickRingRect.anchoredPosition = home;
+            }
+        }
+
+        private void UpdateRotateFromJoystickAxis(float axisX)
+        {
+            float deadZone = Mathf.Clamp01(_rotateJoystickDeadZone);
+            _rotateLeftHeld = axisX < -deadZone;
+            _rotateRightHeld = axisX > deadZone;
         }
 
         private static void AddTrigger(EventTrigger trigger, EventTriggerType type, System.Action<BaseEventData> callback)
@@ -788,6 +1089,45 @@ namespace StaticDrift.UI
             return _circleButtonSprite;
         }
 
+        private static Sprite GetCircleRingSprite()
+        {
+            if (_circleRingSprite != null)
+            {
+                return _circleRingSprite;
+            }
+
+            const int size = 256;
+            const float radius = 118f;
+            const float thickness = 8f;
+            Texture2D texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            texture.filterMode = FilterMode.Bilinear;
+            texture.wrapMode = TextureWrapMode.Clamp;
+
+            Vector2 center = new Vector2((size - 1) * 0.5f, (size - 1) * 0.5f);
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float dx = x - center.x;
+                    float dy = y - center.y;
+                    float dist = Mathf.Sqrt(dx * dx + dy * dy);
+                    float d = Mathf.Abs(dist - radius);
+                    float alpha = 0f;
+                    if (d <= thickness)
+                    {
+                        float t = Mathf.InverseLerp(thickness, 0f, d);
+                        alpha = Mathf.Clamp01(t);
+                    }
+
+                    texture.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
+                }
+            }
+
+            texture.Apply();
+            _circleRingSprite = Sprite.Create(texture, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
+            return _circleRingSprite;
+        }
+
         private void SetControlState(string objectName, bool isHeld)
         {
             if (objectName == "RotateLeftButton")
@@ -814,6 +1154,8 @@ namespace StaticDrift.UI
             _rotateLeftHeld = false;
             _rotateRightHeld = false;
             _accelerateHeld = false;
+            _rotateJoystickHeld = false;
+            _rotateJoystickPointerId = -1;
 
             if (_playerController == null)
             {
@@ -828,7 +1170,6 @@ namespace StaticDrift.UI
             }
 
             ResetControlVisual("RotateLeftButton");
-            ResetControlVisual("RotateRightButton");
             ResetControlVisual("AccelerateButton");
         }
 
